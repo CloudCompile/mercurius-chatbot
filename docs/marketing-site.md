@@ -1,8 +1,12 @@
 # Mercurius AI — marketing site
 
 The promotional site for [Mercurius AI](https://trymercurius.com), deployed
-by Netlify from this folder. Plain HTML, CSS, and a few lines of vanilla
-JS — no framework, no build step, no dependencies.
+by Netlify from the `marketing/` folder. Plain HTML, CSS, and a few lines of
+vanilla JS — no framework, no build step, no dependencies.
+
+These docs live here in `docs/`, not in `marketing/`, because Netlify
+publishes every file in that folder (they used to be `marketing/README.md`,
+which anyone could read at trymercurius.com/README.md).
 
 ## Structure
 
@@ -13,6 +17,7 @@ marketing/
 ├── ads.html            # "Watch" (/ads): every reel, grouped by category, with captions
 ├── features.html, modes.html, how-it-works.html, audience.html, trust.html
 ├── privacy.html, terms.html, support.html   # linked from the app and App Store
+├── 404.html            # Netlify serves it, with a 404 status, for any unknown path
 ├── _redirects          # /get, /beta, /feedback shortcuts + clean-URL rewrites
 ├── robots.txt, sitemap.xml
 ├── styles.css          # Single stylesheet; design tokens at top
@@ -29,13 +34,18 @@ marketing/
 │   └── mercurius-logo.png/.webp, og-card.png, favicon-48.png, apple-touch-icon.png,
 │       mercurius-icon.png   # Old brand: no page uses them; kept because links from outside
 │                            #   the site may (old link previews, docs/certificate/README.md)
-└── README.md
 ```
 
-Everything in this folder is published, so internal material lives elsewhere:
-the design system is `docs/marketing-design.md`, the Reels manifests are
-`docs/marketing-reels/`, and the scripts that write the generated parts of
-the pages are in `scripts/` (below).
+Everything in `marketing/` is published, so internal material lives
+elsewhere: these docs, the design system (`docs/marketing-design.md`), the
+Reels manifests (`docs/marketing-reels/`), and the scripts that write the
+generated parts of the pages (`scripts/`, below). Keep notes, Markdown, data
+files and scripts out of `marketing/`: `tests/marketingNotFound.test.js`
+fails on any file there that isn't a page, a style, script, image or video,
+`robots.txt`, `sitemap.xml` or `_redirects`. A `_redirects` rule can't hide
+such a file instead, because Netlify finds files whatever the case of the
+URL and rules match it exactly (on the live site `/rEaDmE.md` served the old
+README, while `/bEta` was a 404 though `/beta` redirects).
 
 Canonical URLs are the extensionless form (`https://trymercurius.com/privacy`).
 Netlify rewrites the `.html` links in the pages to that form on deploy, and
@@ -121,7 +131,7 @@ node scripts/build-reels.mjs           # rewrite the cards
 node scripts/build-reels.mjs --check   # fail if the cards or assets/ads/ drift
 ```
 
-The manifests stay out of this folder because they carry posting dates,
+The manifests stay out of `marketing/` because they carry posting dates,
 source file names and internal notes.
 
 - **Which ads:** every ad with a rendered video, under its calendar
@@ -182,9 +192,13 @@ script). Change them there, bump `CSS_V`/`JS_V`/`ADS_V` when a file changes,
 then:
 
 ```bash
-node scripts/build-site-chrome.mjs           # rewrite all ten pages
+node scripts/build-site-chrome.mjs           # rewrite all eleven pages
 node scripts/build-site-chrome.mjs --check   # fail if any page drifts
 ```
+
+`404.html` is shown at whatever path was mistyped (`/a/b/c` included), so
+it has no canonical URL or `og:url`, asks not to be indexed, and uses
+root-relative links only.
 
 ## Local preview
 
@@ -247,14 +261,25 @@ Latin subset). Keep page text inside that subset (Latin-1 plus general
 punctuation): a character such as "ě" makes browsers fetch the latin-ext
 files as well.
 
+Until Fraunces arrives, headlines show in Iowan Old Style or Georgia, resized
+by the "Fraunces Fallback" faces at the top of `styles.css` so they mostly
+wrap on the same lines and the page doesn't jump when Fraunces swaps in. The
+sizes were measured against this site's headings
+(`docs/marketing-design.md` 3.1). Size headline boxes in `em`, not `ch`: a
+`ch` changes width with the font. Body text does the same until Inter
+arrives: it shows in Arial, resized by the "Inter Fallback" faces to Inter's
+width, so paragraphs keep their line count when Inter swaps in.
+
 ## Accessibility
 
 - Skip link at the very top.
 - Semantic landmarks (`<header>`, `<main>`, `<footer>`, `<nav>`).
 - Heading hierarchy: one `<h1>` (hero), `<h2>` per section, `<h3>`
   inside cards.
-- Mode tabs follow the WAI-ARIA tablist pattern with arrow-key
-  navigation in `script.js`.
+- Mode tabs follow the WAI-ARIA tabs pattern (`script.js`): the
+  selected tab is the tablist's only Tab stop (roving tabindex), Left/Right
+  move between tabs and wrap, Home/End jump to the first/last, and the
+  shown panel is the next Tab stop, its ring drawn on the card's edge.
 - All decorative images have `alt=""` + `aria-hidden`. The brand
   mark has the meaningful label on the wrapping link.
 - Focus: a 3px periwinkle ring on everything focusable (the darker accent
@@ -300,7 +325,7 @@ brand stays premium. Add them only with real content:
 
 - ❌ Fake testimonial blocks (no real students yet)
 - ❌ Logos of institutions (no partnerships yet)
-- ❌ Pricing table (free in beta)
+- ❌ Pricing table (the app is free)
 - ❌ "Trusted by N students" counter (don't fabricate stats)
 - ❌ Heavy animation libraries
 - ❌ Cookie banners (no third-party cookies set)

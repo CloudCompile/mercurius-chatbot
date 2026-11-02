@@ -32,7 +32,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,500..700;1,9..144,500..700&family=Inter:wght@400..700&display=swap" />
-  <link rel="stylesheet" href="/styles.css?v=12" />
+  <link rel="stylesheet" href="/styles.css?v=16" />
 </head>
 
 <body>
@@ -93,18 +93,18 @@
             aria-controls="mode-panel-socratic" id="mode-tab-socratic" data-mode="socratic">
             Socratic
           </button>
-          <button class="mode-pill" role="tab" aria-selected="false"
+          <button class="mode-pill" role="tab" aria-selected="false" tabindex="-1"
             aria-controls="mode-panel-debate" id="mode-tab-debate" data-mode="debate">
             Debate
           </button>
-          <button class="mode-pill" role="tab" aria-selected="false"
+          <button class="mode-pill" role="tab" aria-selected="false" tabindex="-1"
             aria-controls="mode-panel-discussion" id="mode-tab-discussion" data-mode="discussion">
             Discussion
           </button>
         </div>
 
         <div class="mode-panels">
-          <div class="mode-panel is-active" id="mode-panel-socratic" data-mode-panel="socratic" role="tabpanel" aria-labelledby="mode-tab-socratic">
+          <div class="mode-panel is-active" id="mode-panel-socratic" data-mode-panel="socratic" role="tabpanel" aria-labelledby="mode-tab-socratic" tabindex="0">
             <h2>Socratic</h2>
             <p>
               The default. Mercurius asks questions back instead of handing you
@@ -117,7 +117,7 @@
             </div>
           </div>
 
-          <div class="mode-panel" id="mode-panel-debate" data-mode-panel="debate" role="tabpanel" aria-labelledby="mode-tab-debate" hidden>
+          <div class="mode-panel" id="mode-panel-debate" data-mode-panel="debate" role="tabpanel" aria-labelledby="mode-tab-debate" tabindex="0" hidden>
             <h2>Debate</h2>
             <p>
               You take a position; Mercurius pushes the other side. Responses
@@ -130,7 +130,7 @@
             </div>
           </div>
 
-          <div class="mode-panel" id="mode-panel-discussion" data-mode-panel="discussion" role="tabpanel" aria-labelledby="mode-tab-discussion" hidden>
+          <div class="mode-panel" id="mode-panel-discussion" data-mode-panel="discussion" role="tabpanel" aria-labelledby="mode-tab-discussion" tabindex="0" hidden>
             <h2>Discussion</h2>
             <p>
               Conversational and balanced. Mercurius treats you as a thinking
@@ -209,7 +209,7 @@
           <img src="/assets/app-store-badge.svg" alt="Download on the App Store" width="168" height="56" loading="lazy" />
         </a>
         <p class="fineprint">Search “Mercurius AI” on iPhone.</p>
-        <p class="fineprint">Free on the App Store. Requires iPhone, iOS 17 or later.</p>
+        <p class="fineprint">Free on the App Store. For iPhone and iPad, iOS 17 or later.</p>
       </div>
     </section>
   </main>
@@ -237,6 +237,6 @@
     </div>
   </footer>
 
-  <script src="/script.js?v=10" defer></script>
+  <script src="/script.js?v=11" defer></script>
 </body>
 </html>

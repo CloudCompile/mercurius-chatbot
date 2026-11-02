@@ -75,6 +75,10 @@ public final class InMemoryChatStore: ChatStore {
         conversations[conversationId] = box
     }
 
+    public func removeMessage(id messageId: UUID, from conversationId: UUID) {
+        conversations[conversationId]?.messages.removeAll { $0.id == messageId }
+    }
+
     public func listConversations() -> [ConversationSummary] {
         conversations.values
             .filter { $0.mode != ChatStoreTag.curriculum }

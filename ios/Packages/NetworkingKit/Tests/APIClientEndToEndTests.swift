@@ -150,6 +150,27 @@ struct APIClientEndToEndTests {
         }
     }
 
+    @Test("generateQuiz: the server's 400 insufficient_history surfaces as conversationTooShort")
+    func quizConversationTooShort() async {
+        // server.js generateFromHistory, byte for byte, as /api/quiz sends it.
+        StubURLProtocol.handler = { _ in
+            .response(
+                status: 400,
+                headers: ["Content-Type": "application/json"],
+                data: Data(#"{"error":"insufficient_history","message":"Have a longer conversation first."}"#.utf8)
+            )
+        }
+        let client = makeTestAPIClient()
+        do {
+            _ = try await client.generateQuiz(sessionId: testSessionId)
+            Issue.record("Expected APIError.conversationTooShort")
+        } catch APIError.conversationTooShort {
+            // expected
+        } catch {
+            Issue.record("Expected .conversationTooShort, got \(error)")
+        }
+    }
+
     @Test("generateQuiz: 429 surfaces as APIError.rateLimited")
     func quizRateLimited() async {
         StubURLProtocol.handler = { _ in .response(status: 429, data: Data()) }

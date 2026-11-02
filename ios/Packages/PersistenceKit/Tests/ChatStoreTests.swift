@@ -169,6 +169,23 @@ struct InMemoryChatStoreTests {
         #expect(store.loadConversation(conversationId: kept) != nil)
     }
 
+    @Test("removeMessage(id:from:) removes that one message; unknown ids are a no-op")
+    func removeOneMessage() {
+        let store = InMemoryChatStore()
+        let id = store.createConversation(mode: .socratic)
+        let kept = StoredMessage(id: UUID(), role: "assistant", content: "Earlier reply", createdAt: Date())
+        let gone = StoredMessage(id: UUID(), role: "user", content: "Can you check question 3?", createdAt: Date())
+        store.append(kept, to: id)
+        store.append(gone, to: id)
+
+        store.removeMessage(id: gone.id, from: id)
+        #expect(store.loadMessages(conversationId: id).map(\.id) == [kept.id])
+
+        store.removeMessage(id: UUID(), from: id)
+        store.removeMessage(id: kept.id, from: UUID())
+        #expect(store.loadMessages(conversationId: id).map(\.id) == [kept.id])
+    }
+
     // MARK: - Curriculum lesson threads are hidden from main chat history
 
     @Test("Curriculum conversations are excluded from latestConversationId + listConversations, but stay loadable for resume")
@@ -258,6 +275,27 @@ struct SwiftDataChatStoreTests {
         store.delete(conversationId: a)
         #expect(store.loadConversation(conversationId: a) == nil)
         #expect(store.loadConversation(conversationId: b) != nil)
+    }
+
+    @Test("removeMessage(id:from:) removes that one row and leaves the rest")
+    func removeOneMessage() throws {
+        let store = try SwiftDataChatStore.inMemory()
+        let id = store.createConversation(mode: .socratic)
+        let kept = StoredMessage(id: UUID(), role: "assistant", content: "Earlier reply", createdAt: Date())
+        let gone = StoredMessage(id: UUID(), role: "user", content: "Can you check question 3?", createdAt: Date())
+        store.append(kept, to: id)
+        store.append(gone, to: id)
+
+        store.removeMessage(id: gone.id, from: id)
+        #expect(store.loadMessages(conversationId: id).map(\.id) == [kept.id])
+        #expect(store.loadConversation(conversationId: id)?.messages.map(\.content) == ["Earlier reply"])
+        #expect(store.listConversations().first?.messageCount == 1)
+
+        store.removeMessage(id: UUID(), from: id)
+        #expect(store.loadMessages(conversationId: id).count == 1)
+        // The thread keeps taking new turns.
+        store.append(StoredMessage(id: UUID(), role: "user", content: "Typed instead", createdAt: Date()), to: id)
+        #expect(store.loadMessages(conversationId: id).map(\.content) == ["Earlier reply", "Typed instead"])
     }
 
     @Test("deleteAll removes conversations and messages")

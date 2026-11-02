@@ -21,6 +21,53 @@
    ============================================================ */
 
 /* ---------- 1. Tokens ---------- */
+/* Fallback faces for Fraunces. Until Fraunces arrives (display=swap) the
+   headlines are set in Iowan Old Style (iPhone, iPad, Mac) or Georgia
+   (Windows). Unadjusted, Iowan's italic is 10 to 13% narrower than
+   Fraunces's, so headlines changed their line count when Fraunces swapped
+   in and everything under them jumped (a layout shift of up to 0.33 on a
+   phone's first visit).
+   size-adjust scales each face to Fraunces's width on the site's own
+   headings, and the overrides give it Fraunces's ascent and descent
+   (0.978 / 0.255 em; they are scaled by size-adjust, hence divided by it
+   here). How the numbers were measured: docs/marketing-design.md 3.1. */
+@font-face { font-family: "Fraunces Fallback Iowan"; font-style: normal; font-weight: 400 599; src: local("Iowan Old Style Roman"), local("IowanOldStyle-Roman");
+  size-adjust: 103%; ascent-override: 95.0%; descent-override: 24.8%; line-gap-override: 0%; }
+@font-face { font-family: "Fraunces Fallback Iowan"; font-style: normal; font-weight: 600 900; src: local("Iowan Old Style Bold"), local("IowanOldStyle-Bold");
+  size-adjust: 99%; ascent-override: 98.8%; descent-override: 25.8%; line-gap-override: 0%; }
+@font-face { font-family: "Fraunces Fallback Iowan"; font-style: italic; font-weight: 400 599; src: local("Iowan Old Style Italic"), local("IowanOldStyle-Italic");
+  size-adjust: 113%; ascent-override: 86.5%; descent-override: 22.6%; line-gap-override: 0%; }
+@font-face { font-family: "Fraunces Fallback Iowan"; font-style: italic; font-weight: 600 900; src: local("Iowan Old Style Bold Italic"), local("IowanOldStyle-BoldItalic");
+  size-adjust: 113%; ascent-override: 86.5%; descent-override: 22.6%; line-gap-override: 0%; }
+@font-face { font-family: "Fraunces Fallback Georgia"; font-style: normal; font-weight: 400 599; src: local("Georgia");
+  size-adjust: 105%; ascent-override: 93.1%; descent-override: 24.3%; line-gap-override: 0%; }
+@font-face { font-family: "Fraunces Fallback Georgia"; font-style: normal; font-weight: 600 900; src: local("Georgia Bold"), local("Georgia-Bold");
+  size-adjust: 93%; ascent-override: 105.2%; descent-override: 27.4%; line-gap-override: 0%; }
+@font-face { font-family: "Fraunces Fallback Georgia"; font-style: italic; font-weight: 400 599; src: local("Georgia Italic"), local("Georgia-Italic");
+  size-adjust: 98%; ascent-override: 99.8%; descent-override: 26.0%; line-gap-override: 0%; }
+@font-face { font-family: "Fraunces Fallback Georgia"; font-style: italic; font-weight: 600 900; src: local("Georgia Bold Italic"), local("Georgia-BoldItalic");
+  size-adjust: 90%; ascent-override: 108.7%; descent-override: 28.3%; line-gap-override: 0%; }
+/* Fallback face for Inter, the same idea. Until Inter arrives the body text
+   was set in the system font (San Francisco on Apple devices), which is
+   about 5% narrower, so paragraphs gained a line each when Inter swapped in
+   and the page under them jumped (0.19 on Terms at 430 px). Arial is on
+   iPhones, iPads, Macs and Windows; size-adjust scales it to Inter's width on
+   this site's text, and the overrides give it Inter's ascent and descent
+   (0.969 / 0.241 em, divided by size-adjust). Where Arial is missing
+   (Android) the stack goes on to the system font as before. unicode-range
+   is the one Google gives Inter's Latin file, so characters Inter doesn't
+   have (the "→" in the next-page links) still come from the system font
+   once Inter has loaded. Measured: docs/marketing-design.md 3.1. */
+@font-face { font-family: "Inter Fallback"; font-style: normal; font-weight: 400 499; src: local("Arial"), local("ArialMT");
+  size-adjust: 107%; ascent-override: 90.6%; descent-override: 22.5%; line-gap-override: 0%;
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
+@font-face { font-family: "Inter Fallback"; font-style: normal; font-weight: 500 599; src: local("Arial"), local("ArialMT");
+  size-adjust: 108.3%; ascent-override: 89.5%; descent-override: 22.3%; line-gap-override: 0%;
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
+@font-face { font-family: "Inter Fallback"; font-style: normal; font-weight: 600 900; src: local("Arial Bold"), local("Arial-BoldMT");
+  size-adjust: 101%; ascent-override: 95.9%; descent-override: 23.9%; line-gap-override: 0%;
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
+
 :root {
   color-scheme: dark;
 
@@ -76,8 +123,8 @@
   --glow-merc: radial-gradient(closest-side, rgba(138, 92, 255, 0.6) 0%, rgba(91, 61, 240, 0.16) 60%, rgba(91, 61, 240, 0) 100%);
 
   /* Type */
-  --font-display: "Fraunces", "Iowan Old Style", Georgia, serif;
-  --font-body: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-display: "Fraunces", "Fraunces Fallback Iowan", "Fraunces Fallback Georgia", serif;
+  --font-body: "Inter", "Inter Fallback", system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   --fs-display: clamp(2.5rem, 1.6rem + 4.5vw, 4.5rem);
   --fs-page-title: clamp(2.25rem, 1.55rem + 3.4vw, 3.75rem);
   --fs-h2: clamp(1.875rem, 1.3rem + 2.6vw, 3rem);
@@ -899,7 +946,10 @@ strong { color: var(--ink); font-weight: 600; }
 }
 .page-hero .container { position: relative; }
 .page-hero h1 {
-  max-width: 18ch;
+  /* 18ch of Fraunces, in em: a ch is the width of the font's "0", and the
+     fallbacks' old-style "0" is 4 to 13% narrower, so an 18ch box shrank
+     until Fraunces arrived and the headline rewrapped. */
+  max-width: 12.25em;
   margin-bottom: var(--space-5);
   font-size: var(--fs-page-title);
   line-height: var(--lh-heading);
@@ -908,6 +958,16 @@ strong { color: var(--ink); font-weight: 600; }
 .page-hero .lede + .lede { margin-top: var(--space-4); }
 /* The first band after a page hero shares its navy, so it needs less air. */
 .page-hero + .section:not(.section-soft):not(.section-band) { padding-top: var(--space-5); }
+.page-hero .cta-row { margin-top: var(--space-6); }
+
+/* 404: only a hero, so keep the footer at the bottom of a tall window. */
+.page-404 {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  min-height: 100dvh;
+}
+.page-404 main { flex: 1 0 auto; }
 
 .page-meta {
   margin: var(--space-5) 0 0;
@@ -1150,6 +1210,16 @@ strong { color: var(--ink); font-weight: 600; }
   border-radius: var(--radius-lg);
 }
 .mode-panel[hidden] { display: none; }
+/* The shown panel is the Tab stop after the tabs (WAI-ARIA tabs); draw its
+   focus ring on the card's edge instead of a square inside the padding.
+   Browsers without :has() keep the default ring on the panel itself. */
+@supports selector(:has(*)) {
+  .mode-panels:has(> .mode-panel:focus-visible) {
+    outline: var(--focus-ring);
+    outline-offset: var(--focus-offset);
+  }
+  .mode-panel:focus-visible { outline: none; }
+}
 .mode-panel h2 {
   margin-bottom: var(--space-3);
   font-size: var(--fs-h3);

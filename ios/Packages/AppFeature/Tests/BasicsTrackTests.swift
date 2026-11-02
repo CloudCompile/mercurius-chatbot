@@ -72,6 +72,10 @@ struct BasicsTrackTests {
         #expect(state.primaryActionTitle == "Review your Basics lessons")
         #expect(state.basicsProgressLine == "You've finished 18 Basics lessons.")
         #expect(!state.greeting(hour: 9).contains("!"))
+        // It points at the lessons its buttons open, never at the free chat
+        // (the Socratic tutor), which Home doesn't offer on Basics.
+        #expect(state.greeting(hour: 9) == "You've finished the Basics. Go back over any lesson any time.")
+        #expect(!state.greeting(hour: 9).lowercased().contains("chat"))
     }
 
     // MARK: - The lesson window

@@ -8,16 +8,19 @@ enum ChatAnnouncement {
 
     /// After the chat's phase changes. Only the end of a request speaks: a
     /// reply that arrived (with its question, if it asks one — that is what
-    /// the student must act on) or one that didn't.
+    /// the student must act on) or one that didn't. A photo turn that came
+    /// back to the composer unsent (`photoLimitNotice`) says why instead.
     static func afterPhaseChange(
         from old: ChatViewModel.Phase,
         to new: ChatViewModel.Phase,
-        latest: ChatMessage?
+        latest: ChatMessage?,
+        photoLimitNotice: String? = nil
     ) -> String? {
         let wasReplying = old == .sending || old == .streaming
         guard wasReplying else { return nil }
         switch new {
         case .idle:
+            if let photoLimitNotice { return photoLimitNotice }
             guard let latest, latest.role == .assistant,
                   !latest.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
             if let question = question(in: latest.content) {

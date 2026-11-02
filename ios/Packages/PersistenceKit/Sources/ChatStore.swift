@@ -131,6 +131,12 @@ public protocol ChatStore: AnyObject {
     /// id is unknown, the call is a no-op (defensive).
     func append(_ message: StoredMessage, to conversationId: UUID)
 
+    /// Remove one message from a conversation. A no-op when either id is
+    /// unknown. Used when a photo turn goes back to the composer because
+    /// today's photo uploads are used up: it was never sent, so it must not
+    /// come back after a relaunch as a turn still waiting for its reply.
+    func removeMessage(id messageId: UUID, from conversationId: UUID)
+
     /// List every conversation as a UI-ready summary, sorted by
     /// `updatedAt` descending. Empty list means no history.
     func listConversations() -> [ConversationSummary]

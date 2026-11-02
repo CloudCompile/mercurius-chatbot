@@ -49,5 +49,5 @@ Founder decision (October 7, 2026): a replay of a real Mercurius session, on the
 
 ## Repo hygiene
 - **Branch** `feat/marketing-demo` (worktree in the session scratchpad). Don't touch the server, the iOS code or other pages.
-- **README:** update `marketing/README.md` (structure, plus how to regenerate the replay).
+- **README:** update the site docs (then `marketing/README.md`, now `docs/marketing-site.md`): structure, plus how to regenerate the replay.
 - **Commit** the capture JSON in `docs/evals/` as provenance.

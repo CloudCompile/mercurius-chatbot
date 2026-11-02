@@ -28,6 +28,10 @@ import SettingsFeature
 /// greeting shown instantly). At accessibility type sizes Merc shrinks so the
 /// scaled text and CTAs keep the room. VoiceOver reads the complete greeting
 /// immediately — never the mid-typewriter fragment.
+///
+/// The greeting follows `state`: a progress pull or streak seed that lands
+/// after Home is up changes the words in place (`GreetingBubble`), so the
+/// bubble never says "Your first lesson is ready" over a Continue button.
 struct HomeView: View {
 
     // MARK: - Inputs
@@ -71,9 +75,14 @@ struct HomeView: View {
     @State private var mercState: MercState = .idle
     /// Speech bubble visibility + typewriter progress.
     @State private var showBubble = false
-    @State private var typedCount = 0
-    @State private var greeting = ""
+    @State private var bubble = GreetingBubble()
     @State private var typeTask: Task<Void, Never>?
+    /// The local hour the greeting's hello uses, read on appear, so the
+    /// opener doesn't change under the student while Home is up.
+    @State private var hour = Calendar.current.component(.hour, from: Date())
+
+    /// What Merc should be saying for the state Home shows now.
+    private var currentGreeting: String { state.greeting(hour: hour) }
 
     // MARK: - Body
 
@@ -141,6 +150,7 @@ struct HomeView: View {
             .scrollBounceBehavior(.basedOnSize)
         }
         .onAppear(perform: enter)
+        .onChange(of: currentGreeting) { _, line in follow(line) }
         .onDisappear { typeTask?.cancel() }
     }
 
@@ -163,10 +173,11 @@ struct HomeView: View {
     private var speechBubble: some View {
         VStack(spacing: -1) {
             ZStack(alignment: .topLeading) {
-                bubbleText(greeting)
+                bubbleText(bubble.line)
                     .foregroundStyle(.clear)      // sizes the bubble; never visible
-                bubbleText(typedGreeting)
+                bubbleText(bubble.shown)
                     .foregroundStyle(BrandColor.text)
+                    .contentTransition(.opacity)  // a line that changes after it was said
             }
             .padding(.vertical, BrandSpacing.sm)
             .padding(.horizontal, BrandSpacing.md)
@@ -188,16 +199,12 @@ struct HomeView: View {
         }
         .opacity(showBubble ? 1 : 0)
         .scaleEffect(showBubble ? 1 : 0.9, anchor: .bottom)
-        .accessibilityLabel(greeting)   // VoiceOver hears the whole line at once
+        .accessibilityLabel(bubble.line)   // VoiceOver hears the whole line at once
     }
 
     private func bubbleText(_ string: String) -> Text {
         Text(string)
             .font(.system(.subheadline, design: .rounded).weight(.semibold))
-    }
-
-    private var typedGreeting: String {
-        String(greeting.prefix(typedCount))
     }
 
     /// The star of the screen. Pops in with a spring, waves, then lives —
@@ -335,15 +342,18 @@ struct HomeView: View {
     // MARK: - Entrance choreography
 
     private func enter() {
-        greeting = state.greeting(hour: Calendar.current.component(.hour, from: Date()))
+        let hour = Calendar.current.component(.hour, from: Date())
+        self.hour = hour
+        let line = state.greeting(hour: hour)
         guard !reduceMotion else {
             // Reduce Motion: no pop, no wave, no typewriter — everything
             // renders settled with the full greeting.
             entered = true
             showBubble = true
-            typedCount = greeting.count
+            bubble.showWhole(line)
             return
         }
+        bubble.begin(line)
         withAnimation(.spring(response: 0.55, dampingFraction: 0.68)) {
             entered = true
         }
@@ -359,14 +369,36 @@ struct HomeView: View {
         }
     }
 
+    /// Types the bubble's line from its start. It reads the line on every
+    /// character, so a line that changes mid-type is typed to its own end.
     private func startTyping() {
         typeTask?.cancel()
-        typedCount = 0
+        bubble.begin(bubble.line)
         typeTask = Task { @MainActor in
-            for i in 1...max(greeting.count, 1) {
+            while !bubble.isFullyTyped {
                 try? await Task.sleep(for: .seconds(0.024))
                 guard !Task.isCancelled else { return }
-                typedCount = i
+                bubble.typeNext()
+            }
+        }
+    }
+
+    /// The state under Home changed what Merc should say (a late progress
+    /// pull or streak seed). Swap the words without replaying the entrance:
+    /// a line already said in full crossfades to the new one (instantly
+    /// under Reduce Motion); one mid-type is typed on into the new line.
+    private func follow(_ line: String) {
+        var next = bubble
+        switch next.follow(line, bubbleShown: showBubble) {
+        case .none:
+            return
+        case .inPlace:
+            bubble = next
+        case .crossfade:
+            if reduceMotion {
+                bubble = next
+            } else {
+                withAnimation(.easeInOut(duration: 0.3)) { bubble = next }
             }
         }
     }

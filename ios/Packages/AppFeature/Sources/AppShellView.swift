@@ -923,6 +923,10 @@ struct AppShellView: View {
                 // lesson simply replaces the running activity.
                 startLearningActivity(for: lessonId)
             },
+            // A lesson picked up again (Home's Continue, a reminder, the
+            // path) is a session too: the card closed with the window last
+            // time, and without one here its unit's win never showed.
+            onResumed: { lessonId in startLearningActivity(for: lessonId) },
             onLessonComplete: { lessonId in
                 handleLessonComplete(lessonId)
             },

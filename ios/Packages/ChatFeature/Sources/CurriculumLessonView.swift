@@ -28,6 +28,10 @@ public struct CurriculumLessonView: View {
     /// Fired once when a NEW lesson conversation is created (lessonId, convoId),
     /// so the host can record the in-progress → resume mapping.
     private let onStarted: (String, UUID) -> Void
+    /// Fired once when a SAVED lesson conversation is resumed (lessonId), so
+    /// the host can show the session as it does for a new one (the iPhone's
+    /// Live Activity). Nil where nothing needs it.
+    private let onResumed: ((String) -> Void)?
     /// Fired when the server reports proficiency this turn (lessonId).
     private let onLessonComplete: (String) -> Void
     private let onExit: () -> Void
@@ -118,6 +122,7 @@ public struct CurriculumLessonView: View {
         streakStore: StreakStore? = nil,
         achievementStore: AchievementStore? = nil,
         onStarted: @escaping (String, UUID) -> Void,
+        onResumed: ((String) -> Void)? = nil,
         onLessonComplete: @escaping (String) -> Void,
         onExit: @escaping () -> Void,
         nextLessonNumber: Int? = nil,
@@ -138,6 +143,7 @@ public struct CurriculumLessonView: View {
         self.starter = starter
         self.resumeConversationId = resumeConversationId
         self.onStarted = onStarted
+        self.onResumed = onResumed
         self.onLessonComplete = onLessonComplete
         self.onExit = onExit
         self.nextLessonNumber = nextLessonNumber
@@ -232,7 +238,8 @@ public struct CurriculumLessonView: View {
                     // Where the header drops the title (accessibility
                     // sizes), the thread opens with it, in full.
                     threadTitle: LessonHeaderBar.showsTitle(at: dynamicTypeSize) ? nil : title,
-                    composerFocused: composerFocused
+                    composerFocused: composerFocused,
+                    photoLimitNotice: model.photoLimitNotice
                 )
                 // Lesson 1.1 holds the "How a model reads “bank”" interactive.
                 .lesson(id: lessonId)
@@ -544,6 +551,7 @@ public struct CurriculumLessonView: View {
             attachment: model.pendingImage,
             isPreparingAttachment: model.isPreparingAttachment,
             attachmentError: model.attachmentError,
+            photoLimitNotice: model.photoLimitNotice,
             characterLimit: model.draftCharacterLimit,
             onSend: { model.send() },
             onCancel: { model.cancel() },
@@ -607,14 +615,38 @@ public struct CurriculumLessonView: View {
         didBegin = true
         model.onLessonComplete = { onLessonComplete(lessonId) }
 
+        switch await Self.open(model, lessonId: lessonId, starter: starter,
+                               resumeConversationId: resumeConversationId) {
+        case .resumed: onResumed?(lessonId)
+        case .started(let convoId): onStarted(lessonId, convoId)
+        case nil: break
+        }
+    }
+
+    /// How a lesson opened.
+    enum Opening: Equatable {
+        /// Its saved conversation, as it was.
+        case resumed
+        /// A new conversation (its id, for the resume mapping).
+        case started(UUID)
+    }
+
+    /// Resume `resumeConversationId` when it's still there, otherwise begin a
+    /// fresh curriculum conversation. Nil when nothing could start (no chat
+    /// store to keep it in).
+    @MainActor
+    static func open(
+        _ model: ChatViewModel,
+        lessonId: String,
+        starter: String,
+        resumeConversationId: UUID?
+    ) async -> Opening? {
         if let resumeId = resumeConversationId {
             let resumed = await model.resumeLesson(conversationId: resumeId, starter: starter, lessonId: lessonId)
-            if resumed { return }
+            if resumed { return .resumed }
             // Saved conversation is gone (history reset / pruned) — start fresh.
         }
-        if let convoId = model.beginLessonConversation(starter: starter, lessonId: lessonId) {
-            onStarted(lessonId, convoId)
-        }
+        return model.beginLessonConversation(starter: starter, lessonId: lessonId).map(Opening.started)
     }
 
     /// A short, contextual coaching line — Merc framing the lesson's objective in

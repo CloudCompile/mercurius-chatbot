@@ -257,6 +257,7 @@ final class LegacyModeChatStore: ChatStore {
                                   createdAt: convo.createdAt, updatedAt: convo.updatedAt)
     }
     func append(_ message: StoredMessage, to conversationId: UUID) { base.append(message, to: conversationId) }
+    func removeMessage(id messageId: UUID, from conversationId: UUID) { base.removeMessage(id: messageId, from: conversationId) }
     func listConversations() -> [ConversationSummary] { base.listConversations() }
     func delete(conversationId: UUID) { base.delete(conversationId: conversationId) }
     func deleteAll() { base.deleteAll() }

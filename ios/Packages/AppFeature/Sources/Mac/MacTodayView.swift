@@ -276,7 +276,9 @@ struct MacTodayView: View {
             )
         case nil where state.track == .basics:
             let title = "You've finished the Basics"
-            let detail = "Go back over any lesson, or chat with Merc any time."
+            // Not "or chat with Merc": Basics learners are kept out of the
+            // Socratic free chat (review 2026-10-22).
+            let detail = "Go back over any lesson any time."
             return UpNext(
                 eyebrow: "Basics complete",
                 title: title,

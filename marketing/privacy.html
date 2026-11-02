@@ -32,7 +32,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,500..700;1,9..144,500..700&family=Inter:wght@400..700&display=swap" />
-  <link rel="stylesheet" href="/styles.css?v=12" />
+  <link rel="stylesheet" href="/styles.css?v=16" />
 </head>
 
 <body class="page-read">
@@ -172,9 +172,9 @@
 
         <p class="lede">
           <strong>Usage rows.</strong> For each request we record which
-          feature was used, how many tokens it took, and what it cost. The rows
-          are filed under your session ID so we can apply daily limits. They
-          contain no message content.
+          feature was used, how many tokens it took, and what it cost; for a
+          photo you attach, its size. The rows are filed under your session ID
+          so we can apply daily limits. They contain no message content.
         </p>
 
         <p class="lede">
@@ -191,6 +191,17 @@
           use it only to protect the service from abuse. The server holds the
           raw address in memory just long enough to count each network's
           usage for the day.
+        </p>
+
+        <p class="lede">
+          <strong>Network counts.</strong> When a new session starts, and when
+          a content report is saved, we also write a row that belongs to the
+          network rather than to you. It holds only the scrambled network
+          address, the date and which of the two it was: no session ID and no
+          time of day, although its place among our other records shows
+          roughly when it was written. These rows keep a school network's
+          daily limits on new sessions and reports in place if our server
+          restarts, and they are deleted after 2 days.
         </p>
       </div>
     </section>
@@ -242,7 +253,8 @@
         <p class="lede">
           What we keep is filed under a random ID, never your name or an
           account. Usage rows also carry the scrambled network address
-          described above. On our server, your conversations sit under a
+          described above. Network counts carry that address, the date and
+          which event it was, but not your ID. On our server, your conversations sit under a
           random string of letters and numbers. There is no name, email, or
           phone number next to it. If someone looked at the database, they
           would see what was said, but not who said it.
@@ -368,6 +380,10 @@
                 <td>The whole session</td>
                 <td>Erased entirely, with everything above, after 365 days with no activity</td>
               </tr>
+              <tr>
+                <td>Network counts (new sessions and reports per network, no session ID)</td>
+                <td>2 days</td>
+              </tr>
             </tbody>
           </table>
         </div>
@@ -384,7 +400,9 @@
             erases everything on our server tied to your session ID — messages,
             photos, reports, usage rows, lesson events and your lesson
             checklist — and gives you a brand-new ID. From the server's point
-            of view you have never been here before. Available in app version
+            of view you have never been here before. Your network's daily count
+            of new sessions and reports, described above, is not tied to your
+            ID, so it stays until it is deleted after 2 days. Available in app version
             2.3 and later; on an older version, use the email option below.
           </li>
           <li>
@@ -490,6 +508,6 @@
     </div>
   </footer>
 
-  <script src="/script.js?v=10" defer></script>
+  <script src="/script.js?v=11" defer></script>
 </body>
 </html>

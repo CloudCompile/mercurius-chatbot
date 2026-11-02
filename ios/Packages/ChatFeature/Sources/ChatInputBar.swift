@@ -18,6 +18,10 @@ struct ChatInputBar: View {
     let isPreparingAttachment: Bool
     /// Why the last picked photo couldn't be attached.
     let attachmentError: String?
+    /// Why the last send came back unsent: today's photo uploads are used
+    /// up (`ChatViewModel.photoLimitNotice`). Unlike `attachmentError` it
+    /// stays until the next send or pick: the student needs time to read it.
+    var photoLimitNotice: String? = nil
     let characterLimit: Int
     let onSend: () -> Void
     let onCancel: () -> Void
@@ -99,6 +103,15 @@ struct ChatInputBar: View {
                 attachmentFailure("Couldn't load that photo. Try again.") { attachLoadFailed = false }
             } else if let attachmentError {
                 attachmentFailure(attachmentError, clear: onRemoveAttachment)
+            }
+
+            if let photoLimitNotice {
+                Text(photoLimitNotice)
+                    .font(BrandFont.caption)
+                    .foregroundStyle(BrandColor.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.leading, 44)  // align past the photo button
+                    .accessibilityIdentifier("composer.photoLimit")
             }
 
             if let note = ComposerLimit.note(count: text.utf16.count, limit: characterLimit, wasCut: wasCut) {

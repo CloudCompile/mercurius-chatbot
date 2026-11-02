@@ -687,6 +687,32 @@ describe('stream(): abort', () => {
   });
 });
 
+// create(params, { signal }), as the SDK: lib/claudeCall forwards the
+// student's going away to the answer guard's rewrite this way.
+describe('create(): abort via options.signal', () => {
+  const client = createMockClient({ delayMs: 200 });
+
+  test('an abort while it waits rejects at once with the SDK\'s APIUserAbortError', async () => {
+    const ac = new AbortController();
+    const started = Date.now();
+    const call = client.messages.create(chat('hello'), { signal: ac.signal });
+    setTimeout(() => ac.abort(), 10);
+    await assert.rejects(call, (err) => err instanceof Anthropic.APIUserAbortError);
+    assert.ok(Date.now() - started < 150, 'not after the full 200 ms');
+  });
+
+  test('an already-aborted signal rejects before anything is sent', async () => {
+    const ac = new AbortController();
+    ac.abort();
+    await assert.rejects(client.messages.create(chat('hello'), { signal: ac.signal }), (err) => err instanceof Anthropic.APIUserAbortError);
+  });
+
+  test('a signal that never fires changes nothing', async () => {
+    const m = await client.messages.create(chat('hello'), { signal: new AbortController().signal });
+    assert.equal(m.stop_reason, 'end_turn');
+  });
+});
+
 // ---------------------------------------------------------------------------
 // Scenarios — error / overloaded / credit / hang / slow
 // ---------------------------------------------------------------------------

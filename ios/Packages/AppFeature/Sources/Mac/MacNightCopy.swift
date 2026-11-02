@@ -28,7 +28,10 @@ enum MacNightCopy {
                 return state.basicsProgressLine.map { "\($0) The next one is ready when you are." }
                     ?? "Your next Basics lesson is ready when you are."
             case .unitTest, nil:
-                return "You've finished the Basics. Chat with Merc any time."
+                // The hero under it already says "You've finished the
+                // Basics" and "Go back over any lesson any time."; this line
+                // counts the lessons, as Home's caption does.
+                return state.basicsProgressLine ?? HomeState.basicsFinishedLine
             }
         }
         switch state.next {

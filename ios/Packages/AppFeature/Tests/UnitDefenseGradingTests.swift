@@ -57,6 +57,8 @@ struct UnitDefenseGradingTests {
         #expect(UnitDefenseGrading.gradingError(for: .quotaExceeded(message: "Tomorrow.", retryAfter: nil))
                 == .refused(message: "Tomorrow.", isRetryable: false))
         #expect(UnitDefenseGrading.gradingError(for: .crisisSupport(message: "988")) == .crisis)
+        #expect(UnitDefenseGrading.gradingError(for: .unauthorized)
+                == .refused(message: "The server didn't allow that request.", isRetryable: false))
     }
 
     @Test("A paused or capped server never locks the answer; the network's allowance doesn't either (AUD-30)")
@@ -70,7 +72,7 @@ struct UnitDefenseGradingTests {
         // A student's own daily limit still locks it, as before.
         #expect(UnitDefenseGrading.gradingError(for: .quotaExceeded(message: "Used up.", retryAfter: nil, scope: "session"))
                 == .refused(message: "Used up.", isRetryable: false))
-        guard case .refused(let message, let retryable) = UnitDefenseGrading.gradingError(
+        guard case .refused(let message, let retryable, _) = UnitDefenseGrading.gradingError(
             for: .quotaExceeded(message: "Too many new sessions from this network today.", retryAfter: nil, scope: "ip")
         ) else {
             Issue.record("Expected .refused")
@@ -78,6 +80,49 @@ struct UnitDefenseGradingTests {
         }
         #expect(retryable)
         #expect(message.contains(NetworkSwitchAdvice.current.switchNetwork))
+    }
+
+    @Test("A student's daily limit carries its reset, and Submit comes back for the same answer then")
+    func dailyLimitLockLiftsAtReset() async throws {
+        // The server's 429 for the helper allowance (lib/quotas.js
+        // dailyLimit): an hour to the product day's midnight.
+        let body = Data(#"{"error":"daily_limit","scope":"session","reason":"session_usd","message":"You've reached today's usage limit. Mercurius will be ready again tomorrow.","retryAfterSec":3600}"#.utf8)
+        let refusal: APIError
+        do {
+            try APIClient.validate(statusCode: 429, data: body)
+            Issue.record("Expected a throw")
+            return
+        } catch let error as APIError {
+            refusal = error
+        }
+        guard case .refused(let message, let retryable, let retryAfter) = UnitDefenseGrading.gradingError(for: refusal) else {
+            Issue.record("Expected .refused")
+            return
+        }
+        #expect(!retryable)
+        #expect(retryAfter == 3600)
+        #expect(message.hasPrefix("You've reached today's usage limit. Try again "))
+
+        let unit = try #require(MercuriusCurriculum.units.first)
+        let test = try #require(MercuriusCurriculum.unitTest(for: unit.id))
+        let waits = WaitLog()
+        let model = UnitTestViewModel(
+            unit: unit,
+            test: test,
+            // The reset passes at once here; the real one waits the hour.
+            sleep: { await waits.add($0) },
+            gradeDefense: { _ in try await UnitDefenseGrading.grade { throw refusal } }
+        )
+        for question in model.questions { model.select(question.answer, for: question.id) }
+        model.submitQuiz()
+        model.continueAfterQuiz()
+        model.defenseAnswer = "An answer."
+        await model.submitDefense()
+        // Before, this answer stayed locked until it was edited or the
+        // screen reopened, however long ago the reset passed.
+        #expect(await eventually { model.canSubmitDefense })
+        #expect(await waits.all == [.seconds(3600)])
+        #expect(model.defenseError == nil)
     }
 
     @Test("A school filter's page names the network and leaves the answer free to resend (AUD-32)")
@@ -119,4 +164,10 @@ struct UnitDefenseGradingTests {
         #expect(!model.overallPassed)
         #expect(!model.offersRetake)
     }
+}
+
+/// The waits a unit test's refusal lift asked for.
+private actor WaitLog {
+    private(set) var all: [Duration] = []
+    func add(_ wait: Duration) { all.append(wait) }
 }

@@ -65,6 +65,21 @@ public struct ServerRefusal: Equatable, Sendable {
         return ["network", "wi-fi", "wifi"].contains { lowered.contains($0) }
     }
 
+    /// Today's photo uploads are used up: the student's own (`images`) or
+    /// the network's (`ip_images`). Only photos wait. Typed questions still
+    /// go through, which is what the student's copy says ("you can still
+    /// type your question").
+    ///
+    /// No frame says which allowance it was, so the server's copy decides:
+    /// every photo allowance's message names photos or images, and no other
+    /// daily limit's does. `ServerRefusalTests` pins that against
+    /// `lib/quotas.js`.
+    public var isPhotoAllowance: Bool {
+        guard isDailyLimit else { return false }
+        let lowered = message.lowercased()
+        return ["photo", "image"].contains { lowered.contains($0) }
+    }
+
     /// Whether a Retry can help. A used-up allowance, the spend cap and the
     /// kill switch only say no again until they lift, so no Retry: the
     /// student reads when to come back instead. A network-scoped allowance
@@ -81,6 +96,8 @@ public struct ServerRefusal: Equatable, Sendable {
     /// The copy to show. A daily limit gets its reset as a local clock time
     /// (the server's "tomorrow" is UTC midnight, which is the same evening in
     /// the Americas), and a network-scoped one says cellular data works now.
+    /// The student's photo allowance says when photos come back, not "Try
+    /// again after…": its copy has just said typing still works.
     /// Everything else is the server's copy as written.
     public func studentMessage(clock: LocalClock = .current, advice: NetworkSwitchAdvice = .current) -> String {
         guard isDailyLimit else { return message }
@@ -91,6 +108,7 @@ public struct ServerRefusal: Equatable, Sendable {
             return "\(kept) \(advice.switchNetwork) and try again, or come back \(reset)."
         }
         guard let reset else { return message }
+        if isPhotoAllowance { return "\(kept) Photos come back \(reset)." }
         return "\(kept) Try again \(reset)."
     }
 

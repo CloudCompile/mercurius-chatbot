@@ -165,7 +165,13 @@ public final class APIClient: Sendable {
         }
         switch statusCode {
         case 400:
-            throw APIError.invalidRequest(reason: errorBody(from: data)?.message)
+            let body = errorBody(from: data)
+            // server.js generateFromHistory: too little conversation for a
+            // quiz. The student's next step is to chat more, not to resend.
+            if body?.error == "insufficient_history" {
+                throw APIError.conversationTooShort
+            }
+            throw APIError.invalidRequest(reason: body?.message)
         case 401, 403:
             // No student-facing route answers 401/403, and ours always carry
             // a machine code. A bare one is a school filter or proxy page.

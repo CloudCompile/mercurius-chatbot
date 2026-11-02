@@ -330,7 +330,7 @@ const section = [
   `        <a class="demo-badge" href="${APP_STORE_URL}" target="_blank" rel="noopener noreferrer" aria-label="Download Mercurius on the App Store">`,
   '          <img src="/assets/app-store-badge.svg" alt="Download on the App Store" width="144" height="48" />',
   '        </a>',
-  '        <p class="demo-end-fine">Free on the App Store. Requires iPhone, iOS 17 or later.</p>',
+  '        <p class="demo-end-fine">Free on the App Store. For iPhone and iPad, iOS 17 or later.</p>',
   '        <button type="button" class="demo-btn" data-demo-action="restart" hidden>Start over</button>',
   '      </div>',
   '',

@@ -41,6 +41,13 @@ public final class ChatViewModel {
     /// by the next pick or removal.
     public private(set) var attachmentError: String?
 
+    /// The server's copy, shown over the composer, when a photo turn came
+    /// back unsent because today's photo uploads are used up
+    /// (`returnPhotoTurnToComposer`). Stays until the next request, pick or
+    /// removal, or until the thread changes. Set, it also means the phase's
+    /// last move to idle wasn't a reply arriving.
+    public private(set) var photoLimitNotice: String?
+
     /// Active teaching mode. Defaults to Socratic on first launch;
     /// updated from the server on each `complete` event and on
     /// successful `switchMode(to:)` calls.
@@ -258,7 +265,7 @@ public final class ChatViewModel {
         guard let role = ChatMessage.Role(rawValue: record.role) else { return nil }
         var content = record.content
         if role == .user, content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            content = "[Shared an image]"
+            content = photoOnlyContent
         }
         return ChatMessage(
             id: record.id,
@@ -268,6 +275,9 @@ public final class ChatViewModel {
             status: .idle
         )
     }
+
+    /// What a photo-only user turn says, on screen and on the wire.
+    static let photoOnlyContent = "[Shared an image]"
 
     /// Ensure a conversation exists and return its id. Creates one in
     /// the current mode lazily if the store is present but no
@@ -315,6 +325,7 @@ public final class ChatViewModel {
         let generation = attachmentGeneration
         pendingImage = nil
         attachmentError = nil
+        photoLimitNotice = nil
         isPreparingAttachment = true
         let preparer = self.preparer
         attachmentTask = Task { [weak self] in
@@ -342,6 +353,7 @@ public final class ChatViewModel {
         isPreparingAttachment = false
         pendingImage = nil
         attachmentError = nil
+        photoLimitNotice = nil
     }
 
     public func send(responseMode: ResponseMode = .concise) {
@@ -365,7 +377,8 @@ public final class ChatViewModel {
         // curriculum turns (bricking the lesson), and an empty persisted
         // turn hydrates as an invisible message after relaunch. Mirror the
         // server's own dbHistory substitution.
-        let content = text.isEmpty && attachedImage != nil ? "[Shared an image]" : text
+        let content = text.isEmpty && attachedImage != nil ? Self.photoOnlyContent : text
+        photoLimitNotice = nil
         let userMessage = ChatMessage(role: .user, content: content, image: attachedImage)
         messages.append(userMessage)
         persistMessage(userMessage)
@@ -453,7 +466,17 @@ public final class ChatViewModel {
                 imageId = response.id
             } catch is CancellationError {
                 return
+            } catch _ where Task.isCancelled {
+                // Stop, New Chat or opening another thread cancelled the
+                // upload, and the canceller has already set the state, as in
+                // runStream. APIClient reports the cancel as
+                // `APIError.cancelled`, which the arm above never sees.
+                return
             } catch let error as APIError {
+                if let refusal = error.serverRefusal, refusal.isPhotoAllowance,
+                   returnPhotoTurnToComposer(assistantId: assistantId, image: image, refusal: refusal) {
+                    return
+                }
                 markCurrentFailed(reason: error.userFacingMessage(clock: clock), isRetryable: error.isRetryable, assistantId: assistantId)
                 return
             } catch {
@@ -462,6 +485,45 @@ public final class ChatViewModel {
             }
         }
         await runStream(assistantId: assistantId, responseMode: responseMode, imageId: imageId)
+    }
+
+    /// Today's photo uploads are used up (the student's, or the school
+    /// network's), but typed questions still go through. A failed turn would
+    /// leave the student's question in a bubble that looks sent, next to a
+    /// photo Merc never saw, with an empty composer. After a relaunch it came
+    /// back as "Merc's reply was interrupted.", and Retry sent the question
+    /// without its photo.
+    ///
+    /// So the turn goes back to the composer unsent. It leaves the thread and
+    /// the device, its text returns to the field, and the server's copy, with
+    /// its reset as a local time, shows over the field. The photo stays
+    /// attached only for the network's allowance, where another network
+    /// (cellular data) can send it now: Send is its retry, so the phase
+    /// offers none. The phase goes back to idle: the thread ends on Merc's
+    /// last finished reply again, so Explain more and the other controls
+    /// that wait for an idle chat stay. Views read `photoLimitNotice` to
+    /// know no reply came, so nothing greets it as one (VoiceOver hears the
+    /// copy, not "Merc replied.", and there's no encouraging beat). False
+    /// when the turn isn't the thread's latest any more; the caller then
+    /// marks it failed as before.
+    private func returnPhotoTurnToComposer(assistantId: UUID, image: ChatImage, refusal: ServerRefusal) -> Bool {
+        guard let replyIndex = messages.indices.last, messages[replyIndex].id == assistantId,
+              replyIndex > 0, messages[replyIndex - 1].role == .user,
+              messages[replyIndex - 1].image == image else { return false }
+        let turn = messages[replyIndex - 1]
+        messages.removeSubrange((replyIndex - 1)...replyIndex)
+        if let store, let conversationId {
+            store.removeMessage(id: turn.id, from: conversationId)
+        }
+        let typed = turn.content == Self.photoOnlyContent ? "" : turn.content
+        // Anything typed while the photo was uploading stays, after it.
+        draft = [typed, draft].filter { !$0.isEmpty }.joined(separator: "\n")
+        if refusal.isNetworkScoped, pendingImage == nil { pendingImage = image }
+        let notice = refusal.studentMessage(clock: clock)
+        photoLimitNotice = notice
+        lastRequest = nil
+        phase = .idle
+        return true
     }
 
     /// "Explain more" — asks the model to expand on the previous reply
@@ -493,6 +555,7 @@ public final class ChatViewModel {
         let assistantId = placeholder.id
 
         phase = .sending
+        photoLimitNotice = nil
         lastResponseMode = .deep
 
         let instruction = "Explain more — go deeper on the same topic. Don't repeat what you already said."
@@ -552,6 +615,7 @@ public final class ChatViewModel {
         let placeholder = ChatMessage(role: .assistant, content: "", status: .streaming)
         messages.append(placeholder)
         phase = .sending
+        photoLimitNotice = nil
         lastResponseMode = .balanced
         lastRequest = LastRequest(responseMode: .balanced,
                                   injectedUserTurn: nil,
@@ -619,6 +683,7 @@ public final class ChatViewModel {
         let placeholder = ChatMessage(role: .assistant, content: "", status: .streaming)
         messages.append(placeholder)
         phase = .sending
+        photoLimitNotice = nil
         lastResponseMode = request.responseMode
 
         let assistantId = placeholder.id
@@ -804,6 +869,7 @@ public final class ChatViewModel {
         let hadMessages = !messages.isEmpty
         messages = []
         draft = ""
+        photoLimitNotice = nil
         phase = .idle
         lastRequest = nil
         // Don't mint another record when the active thread is already a
@@ -859,6 +925,7 @@ public final class ChatViewModel {
         discardPendingDelta()
         phase = .idle
         draft = ""
+        photoLimitNotice = nil
         lastRequest = nil   // a failed request must not replay into this thread
 
         // Adopt mode FIRST (server side) so the conversation we're

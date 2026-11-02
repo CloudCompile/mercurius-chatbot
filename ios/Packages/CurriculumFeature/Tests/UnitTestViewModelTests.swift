@@ -24,6 +24,66 @@ private func makeTest() -> UnitTest {
 
 private struct StubError: Error {}
 
+/// A sleep the test ends by hand, so a refusal's lift can be checked before
+/// and after its reset without waiting an hour. Like `Task.sleep`, it throws
+/// when its task is cancelled.
+private actor ManualSleep {
+    private(set) var requested: [Duration] = []
+    private(set) var cancelled = 0
+    private var sleepers: [Int: CheckedContinuation<Void, any Error>] = [:]
+    private var cancelledBeforeParking: Set<Int> = []
+    private var nextId = 0
+
+    func sleep(_ duration: Duration) async throws {
+        let id = nextId
+        nextId += 1
+        try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, any Error>) in
+                park(id, duration, continuation)
+            }
+        } onCancel: {
+            Task { await self.cancel(id) }
+        }
+    }
+
+    func wakeAll() {
+        let parked = sleepers.values
+        sleepers = [:]
+        for continuation in parked { continuation.resume() }
+    }
+
+    private func park(_ id: Int, _ duration: Duration, _ continuation: CheckedContinuation<Void, any Error>) {
+        requested.append(duration)
+        if cancelledBeforeParking.remove(id) != nil {
+            cancelled += 1
+            continuation.resume(throwing: CancellationError())
+        } else {
+            sleepers[id] = continuation
+        }
+    }
+
+    private func cancel(_ id: Int) {
+        guard let continuation = sleepers.removeValue(forKey: id) else {
+            cancelledBeforeParking.insert(id)
+            return
+        }
+        cancelled += 1
+        continuation.resume(throwing: CancellationError())
+    }
+}
+
+/// Polls `condition` until it holds or ten seconds pass. Under
+/// `swift test --parallel` a neighbour can hold the main actor for a while.
+@MainActor
+private func eventually(_ condition: () async -> Bool) async -> Bool {
+    let deadline = ContinuousClock.now.advanced(by: .seconds(10))
+    while ContinuousClock.now < deadline {
+        if await condition() { return true }
+        try? await Task.sleep(for: .milliseconds(10))
+    }
+    return await condition()
+}
+
 @Suite("UnitTestViewModel")
 @MainActor
 struct UnitTestViewModelTests {
@@ -221,6 +281,89 @@ struct UnitTestViewModelTests {
 
         m.defenseAnswer = "Because the training data was skewed."
         #expect(m.canSubmitDefense)
+    }
+
+    @Test("A daily limit's lock lifts at its reset: the same answer can go again, and the wait caption goes")
+    func refusalLiftsAtReset() async {
+        let copy = "You've reached today's usage limit. Try again after 7:00 PM."
+        let sleeper = ManualSleep()
+        let m = UnitTestViewModel(
+            unit: makeUnit(),
+            test: makeTest(),
+            sleep: { try await sleeper.sleep($0) },
+            gradeDefense: { _ in throw DefenseGradingError.refused(message: copy, isRetryable: false, retryAfter: 3600) }
+        )
+        m.defenseAnswer = "Because the data was skewed."
+        await m.submitDefense()
+        #expect(m.defenseError == copy)
+        #expect(!m.canSubmitDefense)
+
+        // Before the reset: still locked, waiting the server's hour.
+        #expect(await eventually { await sleeper.requested == [.seconds(3600)] })
+        #expect(!m.canSubmitDefense)
+
+        // The reset passes with the screen still open. Before this fix
+        // nothing ever cleared the lock short of an edit or a reopen.
+        await sleeper.wakeAll()
+        #expect(await eventually { m.canSubmitDefense })
+        #expect(m.defenseError == nil, "the limit no longer holds, so neither does its caption")
+        #expect(m.defenseAnswer == "Because the data was skewed.")
+    }
+
+    @Test("A refusal with no reset time locks until an edit; one already past locks nothing")
+    func refusalWithoutResetTime() async {
+        let sleeper = ManualSleep()
+        var wait: Double? = nil
+        let m = UnitTestViewModel(
+            unit: makeUnit(),
+            test: makeTest(),
+            sleep: { try await sleeper.sleep($0) },
+            gradeDefense: { _ in throw DefenseGradingError.refused(message: "Used up.", isRetryable: false, retryAfter: wait) }
+        )
+        m.defenseAnswer = "An answer."
+        await m.submitDefense()
+        #expect(!m.canSubmitDefense)
+        #expect(await sleeper.requested.isEmpty, "no reset to wait for")
+
+        // Past (or not a day's) waits: no timed lift either way.
+        wait = 0
+        m.defenseAnswer = "Another answer."
+        await m.submitDefense()
+        #expect(m.canSubmitDefense, "a wait that's already over locks nothing")
+        wait = 30 * 24 * 3600
+        await m.submitDefense()
+        #expect(!m.canSubmitDefense)
+        #expect(await sleeper.requested.isEmpty)
+    }
+
+    @Test("A new submit or a retake drops a pending lift, so it can't clear a later caption")
+    func pendingLiftIsDropped() async {
+        let sleeper = ManualSleep()
+        var refusal = DefenseGradingError.refused(message: "Used up.", isRetryable: false, retryAfter: 600)
+        let m = UnitTestViewModel(
+            unit: makeUnit(),
+            test: makeTest(),
+            sleep: { try await sleeper.sleep($0) },
+            gradeDefense: { _ in throw refusal }
+        )
+        m.defenseAnswer = "An answer."
+        await m.submitDefense()
+        #expect(await eventually { await sleeper.requested.count == 1 })
+
+        // An edited answer goes and meets a busy server instead.
+        refusal = .refused(message: "Busy.", isRetryable: true)
+        m.defenseAnswer = "An edited answer."
+        await m.submitDefense()
+        #expect(await eventually { await sleeper.cancelled == 1 })
+        await sleeper.wakeAll()
+        #expect(m.defenseError == "Busy.")
+
+        // Locked again, then the test is retaken: that lift goes too.
+        refusal = .refused(message: "Used up.", isRetryable: false, retryAfter: 600)
+        await m.submitDefense()
+        #expect(await eventually { await sleeper.requested.count == 2 })
+        m.retake()
+        #expect(await eventually { await sleeper.cancelled == 2 })
     }
 
     @Test("A retryable refusal can be sent again as is")

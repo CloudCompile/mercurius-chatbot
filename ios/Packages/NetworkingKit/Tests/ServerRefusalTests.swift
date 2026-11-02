@@ -131,6 +131,44 @@ struct ServerRefusalNetworkScopeTests {
     }
 }
 
+/// lib/quotas.js's photo allowances, as POST /api/images sends them.
+private let photoUploadsCopy = "You've used today's photo uploads — you can still type your question. Photos come back tomorrow."
+private let networkImagesCopy = "This network has reached today's image upload limit. Switch to cellular data, or try again tomorrow."
+
+@Suite("ServerRefusal: the photo allowance")
+struct ServerRefusalPhotoAllowanceTests {
+
+    @Test("The student's photo allowance says when photos come back, not 'Try again', and has no Retry")
+    func studentPhotos() {
+        let refusal = ServerRefusal(code: "daily_limit", message: photoUploadsCopy, retryAfter: auditWait, scope: "session")
+        #expect(refusal.isPhotoAllowance)
+        #expect(!refusal.isNetworkScoped)
+        #expect(!refusal.isRetryable)
+        #expect(normalized(refusal.studentMessage(clock: .pinned(utc: auditNow, zone: "America/Chicago")))
+            == "You've used today's photo uploads — you can still type your question. Photos come back after 7:00 PM.")
+        // A reset at local midnight reads as plain "tomorrow".
+        #expect(refusal.studentMessage(clock: .pinned(utc: auditNow, zone: "UTC"))
+            == "You've used today's photo uploads — you can still type your question. Photos come back tomorrow.")
+    }
+
+    @Test("The network's photo allowance keeps its cellular advice and its Retry")
+    func networkPhotos() {
+        let refusal = ServerRefusal(code: "daily_limit", message: networkImagesCopy, retryAfter: auditWait, scope: "ip")
+        #expect(refusal.isPhotoAllowance)
+        #expect(refusal.isRetryable)
+        #expect(normalized(refusal.studentMessage(clock: .pinned(utc: auditNow, zone: "America/Chicago"), advice: .cellular))
+            == "This network has reached today's image upload limit. Switch to cellular data and try again, or come back after 7:00 PM.")
+    }
+
+    @Test("No other refusal is a photo allowance")
+    func others() {
+        #expect(!ServerRefusal(code: "daily_limit", message: lessonTurnsCopy, retryAfter: auditWait, scope: "session").isPhotoAllowance)
+        #expect(!ServerRefusal(code: "daily_limit", message: networkUsdCopy, retryAfter: auditWait, scope: "ip").isPhotoAllowance)
+        // Not a daily limit, whatever the copy says.
+        #expect(!ServerRefusal(code: "busy", message: "Mercurius is busy. Try the photo again in a moment.", retryAfter: 5).isPhotoAllowance)
+    }
+}
+
 @Suite("ServerRefusal: Retry and verbatim copy")
 struct ServerRefusalRetryTests {
 
@@ -238,6 +276,20 @@ struct ServerRefusalQuotaContractTests {
             let copy = try #require(messages[call.reason], "no DAILY_MESSAGES entry for \(call.reason)")
             let refusal = ServerRefusal(code: "daily_limit", message: copy, retryAfter: 3600)
             #expect(refusal.isNetworkScoped == (call.scope == "ip"), "\(call.reason): \(copy)")
+        }
+    }
+
+    @Test("The copy alone tells a photo allowance from every other daily limit")
+    func copyTellsPhotoAllowance() throws {
+        let source = try #require(quotasSource)
+        let messages = try Self.dailyMessages(in: source)
+        let calls = Self.dailyLimitCalls(in: source)
+        // `images` (the student's) and `ip_images` (the network's).
+        #expect(calls.filter { $0.reason.contains("image") }.count >= 2)
+        for call in calls {
+            let copy = try #require(messages[call.reason], "no DAILY_MESSAGES entry for \(call.reason)")
+            let refusal = ServerRefusal(code: "daily_limit", message: copy, retryAfter: 3600)
+            #expect(refusal.isPhotoAllowance == call.reason.contains("image"), "\(call.reason): \(copy)")
         }
     }
 

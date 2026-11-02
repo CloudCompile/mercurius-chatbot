@@ -196,7 +196,8 @@ public struct ChatView: View {
                         },
                         onQuizMe: { activeSheet = .quiz },
                         mercMood: focalMercState.mood,
-                        mercActivity: focalMercState.activity
+                        mercActivity: focalMercState.activity,
+                        photoLimitNotice: model.photoLimitNotice
                     )
                     #if os(macOS)
                     .nightChat(yourTurn: NightYourTurn.modes.contains(model.currentMode))
@@ -214,7 +215,8 @@ public struct ChatView: View {
         // whether the reply streamed (.streaming→.idle) or arrived whole
         // (.sending→.idle, no deltas).
         .onChange(of: model.phase) { old, new in
-            if (old == .streaming || old == .sending), new == .idle, hasEnoughConversation {
+            if Self.earnsEncouragement(from: old, to: new, messages: model.messages,
+                                       photoLimitNotice: model.photoLimitNotice) {
                 triggerEncourage()
             }
         }
@@ -268,6 +270,7 @@ public struct ChatView: View {
             attachment: model.pendingImage,
             isPreparingAttachment: model.isPreparingAttachment,
             attachmentError: model.attachmentError,
+            photoLimitNotice: model.photoLimitNotice,
             characterLimit: model.draftCharacterLimit,
             onSend: { model.send() },
             onCancel: { model.cancel() },
@@ -527,11 +530,15 @@ public struct ChatView: View {
         }
     }
 
-    /// Whether the conversation is substantive enough (≥2 user turns, ≥4
-    /// messages) to earn the brief "encouraging" Merc beat after a reply.
-    private var hasEnoughConversation: Bool {
-        model.messages.filter { $0.role == .user }.count >= 2
-            && model.messages.count >= 4
+    /// Whether a reply just arrived in a conversation substantive enough (≥2
+    /// user turns, ≥4 messages) to earn the brief "encouraging" Merc beat. A
+    /// photo turn that came back to the composer (`photoLimitNotice`) got no
+    /// reply, though its phase ends idle too.
+    static func earnsEncouragement(from old: ChatViewModel.Phase, to new: ChatViewModel.Phase,
+                                   messages: [ChatMessage], photoLimitNotice: String?) -> Bool {
+        guard old == .streaming || old == .sending, new == .idle, photoLimitNotice == nil else { return false }
+        return messages.filter { $0.role == .user }.count >= 2
+            && messages.count >= 4
     }
 }
 
@@ -647,6 +654,10 @@ struct MessageListView: View {
     var threadTitle: String? = nil
     /// Whether the composer under the list has focus (the keyboard is up).
     var composerFocused: Bool = false
+    /// `ChatViewModel.photoLimitNotice`: the photo turn came back to the
+    /// composer, so the phase's move to idle is announced as that, not as
+    /// a reply.
+    var photoLimitNotice: String? = nil
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
@@ -1025,7 +1036,8 @@ struct MessageListView: View {
             // VoiceOver hears a reply land or fail wherever its focus is
             // (AUD-23).
             .onChange(of: phase) { old, new in
-                if let line = ChatAnnouncement.afterPhaseChange(from: old, to: new, latest: messages.last) {
+                if let line = ChatAnnouncement.afterPhaseChange(from: old, to: new, latest: messages.last,
+                                                                photoLimitNotice: photoLimitNotice) {
                     AccessibilityNotification.Announcement(line).post()
                 }
             }

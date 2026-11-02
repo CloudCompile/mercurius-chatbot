@@ -119,6 +119,45 @@ struct QuizLoadTests {
         }
     }
 
+    @Test("The server's 'have a longer conversation first' reads as a short chat, with no Try again button")
+    func serverTooShortMatchesEmptyQuiz() async {
+        // What /api/quiz answers with fewer than 4 saved messages, e.g. when
+        // the second turn was refused by a limit and never saved while the
+        // chip still showed for two user turns.
+        let body = Data(#"{"error":"insufficient_history","message":"Have a longer conversation first."}"#.utf8)
+        let tools = FakeToolsClient()
+        do {
+            try APIClient.validate(statusCode: 400, data: body)
+            Issue.record("Expected a throw")
+        } catch {
+            tools.quizOutcome = .failure(error)
+        }
+        let vm = makeQuiz(tools: tools)
+
+        await vm.load()
+
+        #expect(vm.phase == .failed(reason: QuizViewModel.conversationTooShortMessage, isRetryable: false))
+        if case .failed(let reason, _) = vm.phase {
+            #expect(!reason.contains("request wasn't right"))
+        }
+
+        // The same words as a quiz that came back empty.
+        let empty = FakeToolsClient()
+        empty.quizOutcome = .success(Quiz(title: "Empty", questions: []))
+        let emptyVM = makeQuiz(tools: empty)
+        await emptyVM.load()
+        #expect(emptyVM.phase == vm.phase)
+    }
+
+    @Test("Unauthorized reads as the server's refusal, never a sign-in")
+    func unauthorizedCopy() async {
+        let tools = FakeToolsClient()
+        tools.quizOutcome = .failure(APIError.unauthorized)
+        let vm = makeQuiz(tools: tools)
+        await vm.load()
+        #expect(vm.phase == .failed(reason: "The server didn't allow that request.", isRetryable: false))
+    }
+
     @Test("APIError propagates retryability")
     func apiErrorRetryable() async {
         let tools = FakeToolsClient()

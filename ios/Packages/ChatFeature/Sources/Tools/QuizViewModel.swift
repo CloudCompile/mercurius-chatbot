@@ -35,6 +35,12 @@ public final class QuizViewModel {
     /// correct / incorrect markers and explanations.
     public private(set) var isSubmitted: Bool = false
 
+    /// There isn't enough conversation to quiz on yet. No Try again
+    /// button: the same conversation gets the same answer, so the way on
+    /// is to chat more and open Quiz me again, which the copy says.
+    static let conversationTooShortMessage =
+        "The conversation is too short to generate a quiz yet. Chat a bit more and try again."
+
     private let tools: ToolsProviding
     private let sessionIdProvider: @Sendable () throws -> String
     private let achievementStore: AchievementStore?
@@ -58,10 +64,7 @@ public final class QuizViewModel {
             let quiz = try await tools.generateQuiz(sessionId: sid)
             // Defend against an empty or malformed quiz.
             guard !quiz.questions.isEmpty else {
-                phase = .failed(
-                    reason: "The conversation is too short to generate a quiz yet. Chat a bit more and try again.",
-                    isRetryable: false
-                )
+                phase = .failed(reason: Self.conversationTooShortMessage, isRetryable: false)
                 return
             }
             phase = .ready(quiz)
@@ -69,6 +72,11 @@ public final class QuizViewModel {
             isSubmitted = false
         } catch APIError.crisisSupport {
             phase = .support
+        } catch APIError.conversationTooShort {
+            // The server's own "too short" (its 400 `insufficient_history`),
+            // e.g. when the second message was refused and never saved: the
+            // same words as an empty quiz, not a generic request error.
+            phase = .failed(reason: Self.conversationTooShortMessage, isRetryable: false)
         } catch let error as APIError {
             phase = .failed(
                 reason: error.userFacingMessage,

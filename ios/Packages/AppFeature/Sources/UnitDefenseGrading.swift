@@ -18,7 +18,8 @@ enum UnitDefenseGrading {
     /// - Any other `APIError` (a daily limit, the spend cap, a busy server)
     ///   carries its own copy; "check your connection" would be wrong.
     ///   `isRetryable` here only decides whether the same answer may be
-    ///   submitted again (the screen has no Retry button: Submit is it).
+    ///   submitted again (the screen has no Retry button: Submit is it), and
+    ///   a daily limit's reset says when it may be again.
     /// - Anything else propagates unchanged.
     static func grade(
         _ call: () async throws -> UnitDefenseResult
@@ -57,7 +58,11 @@ enum UnitDefenseGrading {
             // other 503 refusal is retryable anyway.
             return .refused(message: error.userFacingMessage, isRetryable: true)
         default:
-            return .refused(message: error.userFacingMessage, isRetryable: error.isRetryable)
+            return .refused(
+                message: error.userFacingMessage,
+                isRetryable: error.isRetryable,
+                retryAfter: error.serverRefusal?.retryAfter
+            )
         }
     }
 }

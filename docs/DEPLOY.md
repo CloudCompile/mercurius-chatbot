@@ -180,6 +180,33 @@ toward the dollar caps (`SESSION_DAILY_USD`, `IP_DAILY_USD`,
 `SESSION_DAILY_CHAT_TURNS`. The usage ledger's `answered` column (0/1)
 records which is which, so the counts survive a restart.
 
+A restart reads the rest of the day back from the same ledger too: a
+session's dollars and photo uploads, and a network's dollars and photo
+uploads (count and bytes). A stored photo is a `usage` row of kind
+`image`, $0, with its size in `usage.bytes`. So a redeploy no longer
+clears a network that has reached `IP_DAILY_USD`, `IP_DAILY_IMAGES` or
+`IP_DAILY_IMAGE_BYTES`: raise the variable instead. A network's new sessions
+and content reports are read back too (`IP_DAILY_NEW_SESSIONS`,
+`IP_DAILY_REPORTS`): each is a $0 `usage` row of kind `session` or `report`
+that carries only the network's hashed address (no session id, so erasing a
+session leaves the network's count) and the day (its `ts` is the start of
+the `STREAK_TZ` day, not the moment), and is deleted after
+`NETWORK_COUNT_RETENTION_DAYS`. A session's own report count
+(`SESSION_DAILY_REPORTS`) comes from the `reports` table.
+
+**Known limit: an erasure, then a restart.** "Delete my data" erases the
+session's `usage` rows, and those are the rows a restart reads a network's
+dollars and photos back from. So after an erasure and then a deploy or a
+crash restart the same day, the network gets back the share of
+`IP_DAILY_USD`, `IP_DAILY_IMAGES` and `IP_DAILY_IMAGE_BYTES` that the
+erased sessions used, and `DAILY_BUDGET_USD` gets back their dollars.
+Until the restart nothing changes (the counts in memory stay). It is
+bounded by the number of restarts and by `IP_DAILY_NEW_SESSIONS` (each
+erased id was a sign-up). The new-session and report counts are not
+affected. Closing it would mean keeping a per-network dollar and photo
+total through an erasure, which is more kept about an erased student; that
+is the founder's call, and it is not done.
+
 | Var | Scope | Default |
 |---|---|---|
 | `SESSION_DAILY_LESSON_TURNS` | curriculum (lesson) turns per session | `40` |
@@ -202,6 +229,7 @@ records which is which, so the counts survive a restart.
 | `IMAGE_RETENTION_HOURS` | uploaded image bytes older than this are deleted (the photo's own turn and up to `PHOTO_REATTACH_TURNS` follow-ups are the only consumers). The image purge also runs every 5 minutes, whatever the hour, and an older image is never served or attached | `24` |
 | `REPORT_RETENTION_DAYS` | content reports older than this are deleted, open or resolved. A report quotes a student's turn verbatim, so it is not kept indefinitely; it outlives the 90-day transcript because it is the review record for a flagged reply | `180` |
 | `USAGE_RETENTION_DAYS` / `LESSON_EVENTS_RETENTION_DAYS` | analytics rows (no content) older than this are deleted | `400` |
+| `NETWORK_COUNT_RETENTION_DAYS` | a network's sign-up and report rows (`usage` kinds `session` / `report`: hashed address and day only) older than this are deleted. Only today's read-back after a restart needs them, and today's are never deleted, whatever the value | `2` |
 | `SESSION_RETENTION_DAYS` | sessions inactive this long are erased via the deletion cascade, 200 per sweep | `365` |
 
 ### Removed variables

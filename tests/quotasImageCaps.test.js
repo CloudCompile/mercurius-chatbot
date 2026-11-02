@@ -64,3 +64,41 @@ describe('newSessionAllowed', () => {
     assert.equal(quotas.newSessionAllowed('').ok, true);
   });
 });
+
+// POST /api/images awaits the image store between the check and the count,
+// so it counts on admission (reserveImage) and gives the place back when the
+// write fails (forgetImage). tests/imageUploadQuota.test.js runs the route.
+describe('reserveImage / forgetImage', () => {
+  beforeEach(() => {
+    quotas.__resetForTest();
+    quotas.configure({ SESSION_DAILY_IMAGES: 2, IP_DAILY_IMAGES: 100, IP_DAILY_IMAGE_BYTES: 1000 });
+  });
+
+  test('counts on admission, so back-to-back reservations stop at the cap', () => {
+    const a = quotas.reserveImage({ sessionId: 's', ip: '6.6.6.6', bytes: 10 });
+    const b = quotas.reserveImage({ sessionId: 's', ip: '6.6.6.6', bytes: 10 });
+    const c = quotas.reserveImage({ sessionId: 's', ip: '6.6.6.6', bytes: 10 });
+    assert.deepEqual([a.ok, b.ok, c.ok], [true, true, false]);
+    assert.equal(c.scope, 'session');
+    assert.equal(c.reason, 'images');
+    assert.equal(quotas.snapshot().sessions.totals.images, 2);
+  });
+
+  test('forgetImage gives the session and network places back, bytes included', () => {
+    const a = quotas.reserveImage({ sessionId: 's', ip: '6.6.6.6', bytes: 600 });
+    quotas.reserveImage({ sessionId: 's', ip: '6.6.6.6', bytes: 400 });
+    // 1000 bytes on the network: the byte cap is reached.
+    assert.equal(quotas.check({ sessionId: 'other', ip: '6.6.6.6', kind: 'image' }).ok, false);
+    quotas.forgetImage(a.reservation);
+    assert.equal(quotas.check({ sessionId: 'other', ip: '6.6.6.6', kind: 'image' }).ok, true, 'the 600 bytes are back');
+    assert.equal(quotas.reserveImage({ sessionId: 's', ip: '6.6.6.6', bytes: 1 }).ok, true, 'and the session place');
+  });
+
+  test('forgetImage of a reservation from an earlier product day changes nothing', () => {
+    const a = quotas.reserveImage({ sessionId: 's', ip: '6.6.6.6', bytes: 10 });
+    quotas.reserveImage({ sessionId: 's', ip: '6.6.6.6', bytes: 10 });
+    quotas.forgetImage({ ...a.reservation, day: '1999-01-01' });
+    quotas.forgetImage(null);
+    assert.equal(quotas.check({ sessionId: 's', ip: '6.6.6.6', kind: 'image' }).ok, false);
+  });
+});

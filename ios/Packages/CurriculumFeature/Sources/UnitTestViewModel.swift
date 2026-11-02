@@ -9,8 +9,10 @@ public enum DefenseGradingError: Error, Equatable, Sendable {
     /// can fix it.
     case unavailable
     /// The server or network refused the request — a daily limit, the spend
-    /// cap, a busy server. `message` is safe to show.
-    case refused(message: String, isRetryable: Bool)
+    /// cap, a busy server. `message` is safe to show. `retryAfter` is how
+    /// many seconds until it lifts, when the server said (a daily limit's
+    /// reset); a non-retryable refusal locks the answer until then.
+    case refused(message: String, isRetryable: Bool, retryAfter: TimeInterval? = nil)
     /// The server answered the written defense with crisis support instead
     /// of a grade, on a non-2xx (a 200 crisis arrives as
     /// `DefenseResult.isCrisis`). Shows the support view, like that one.
@@ -80,8 +82,13 @@ public final class UnitTestViewModel {
     public private(set) var defenseResult: DefenseResult?
     public private(set) var defenseError: String?
     /// The answer a non-retryable refusal turned away: sending it again
-    /// would only hit the same wall.
+    /// would only hit the same wall, until it's edited or the wall lifts.
     private var refusedAnswer: String?
+    /// Clears `refusedAnswer` when the refusal's wait is over, so Submit
+    /// comes back at a daily limit's reset on a screen that stayed open.
+    @ObservationIgnored private var refusalLift: Task<Void, Never>?
+    /// How `refusalLift` waits. Injected so a test needn't wait for a reset.
+    private let sleep: @Sendable (Duration) async throws -> Void
 
     /// This attempt's questions, each with its options in a fresh order and
     /// `answer` re-lettered to match. The authored keys lean heavily on "B";
@@ -94,11 +101,13 @@ public final class UnitTestViewModel {
         test: UnitTest,
         mcqPassFraction: Double = 0.8,
         shuffleSeed: UInt64 = .random(in: .min ... .max),
+        sleep: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) },
         gradeDefense: @escaping (String) async throws -> DefenseResult
     ) {
         self.unit = unit
         self.test = test
         self.mcqPassFraction = mcqPassFraction
+        self.sleep = sleep
         self.gradeDefense = gradeDefense
         var rng = SeededGenerator(seed: shuffleSeed)
         self.questions = Self.shuffledOptions(test.questions, using: &rng)
@@ -216,7 +225,7 @@ public final class UnitTestViewModel {
         guard canSubmitDefense else { return }
         isGrading = true
         defenseError = nil
-        refusedAnswer = nil
+        clearRefusal()
         do {
             let result = try await gradeDefense(answer)
             isGrading = false
@@ -235,9 +244,9 @@ public final class UnitTestViewModel {
             // retry loop that can never succeed.
             defenseError = "Grading isn't available yet. It's not your connection — please try again after the next app update."
             isGrading = false
-        } catch DefenseGradingError.refused(let message, let isRetryable) {
+        } catch DefenseGradingError.refused(let message, let isRetryable, let retryAfter) {
             defenseError = message
-            if !isRetryable { refusedAnswer = answer }
+            if !isRetryable { refuse(answer, retryAfter: retryAfter) }
             isGrading = false
         } catch {
             defenseError = "Couldn't grade your answer. Check your connection and try again."
@@ -245,12 +254,42 @@ public final class UnitTestViewModel {
         }
     }
 
+    /// Turns `answer` away after a non-retryable refusal: Submit stays off
+    /// for it until it's edited or, when the refusal said when it lifts (a
+    /// daily limit's reset), until then. At the reset the same answer can go
+    /// again and the caption that said to wait goes, because it no longer
+    /// holds. A wait that's already over locks nothing; one that isn't a
+    /// day's locks until an edit, as with no wait at all.
+    private func refuse(_ answer: String, retryAfter: TimeInterval?) {
+        if let retryAfter, retryAfter <= 0 { return }
+        refusedAnswer = answer
+        guard let retryAfter, retryAfter.isFinite, retryAfter <= Self.longestRefusalWait else { return }
+        let caption = defenseError
+        refusalLift = Task { [weak self, sleep] in
+            do { try await sleep(.seconds(retryAfter)) } catch { return }
+            guard let self, !Task.isCancelled else { return }
+            self.refusedAnswer = nil
+            if self.defenseError == caption { self.defenseError = nil }
+            self.refusalLift = nil
+        }
+    }
+
+    /// The longest wait a refusal's lock follows: a daily limit resets
+    /// within a day (the server's retryAfterSec runs to its next midnight).
+    static let longestRefusalWait: TimeInterval = 2 * 24 * 3600
+
+    private func clearRefusal() {
+        refusedAnswer = nil
+        refusalLift?.cancel()
+        refusalLift = nil
+    }
+
     /// Sets the test aside for support: nothing graded is kept, so no grade,
     /// score or pass can reach the screen or the mastery callback.
     private func enterSupport() {
         defenseResult = nil
         defenseError = nil
-        refusedAnswer = nil
+        clearRefusal()
         phase = .support
     }
 
@@ -297,7 +336,7 @@ public final class UnitTestViewModel {
         defenseAnswer = ""
         defenseResult = nil
         defenseError = nil
-        refusedAnswer = nil
+        clearRefusal()
         isGrading = false
         questions = Self.shuffledOptions(test.questions, using: &rng)
         phase = .quiz

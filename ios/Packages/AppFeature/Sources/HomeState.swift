@@ -149,7 +149,9 @@ struct HomeState: Equatable {
     }
 
     /// Basics' hello: calm, no streak, no exclamation marks (BEGINNER_GUIDE
-    /// §1.2, §2.5).
+    /// §1.2, §2.5). Finished, it points back at the lessons — the buttons
+    /// under it — and not at the free chat, the Socratic tutor that Basics
+    /// learners are kept out of (review 2026-10-22).
     private func basicsGreeting(hour: Int) -> String {
         let hello = Self.opener(hour: hour).replacingOccurrences(of: "!", with: ".")
         switch next {
@@ -158,9 +160,13 @@ struct HomeState: Equatable {
             if !hasProgress { return "\(hello) Your first Basics lesson is ready when you are." }
             return "\(hello) Your next Basics lesson is ready when you are."
         case .unitTest, nil:
-            return "You've finished the Basics. Chat with me any time."
+            return Self.basicsFinishedLine
         }
     }
+
+    /// What Merc says on Home once every Basics lesson is done. The Mac's
+    /// Today shows these words in its hero card instead.
+    static let basicsFinishedLine = "You've finished the Basics. Go back over any lesson any time."
 
     /// A plain hello. Between 10 PM and 5 AM it stays neutral: it used to
     /// cheer a teenager on to study at 2 AM ("Up late? Perfect time to

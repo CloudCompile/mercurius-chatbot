@@ -197,8 +197,75 @@ One stylesheet request, replacing the current Playfair Display one:
 
 Measured on 2026-10-24 (Latin subset, woff2): Fraunces roman about 67 KB,
 Fraunces italic about 82 KB, Inter about 48 KB. About 197 KB in all, loaded
-with `display=swap`. Fallbacks: `"Iowan Old Style", Georgia, serif` and
-`system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif`.
+with `display=swap`. Fallbacks: `"Fraunces Fallback Iowan", "Fraunces
+Fallback Georgia", serif` and
+`"Inter Fallback", system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif`.
+
+**Fallback faces (2026-10-29).** With `display=swap` a first visit paints the
+headlines in the fallback and swaps Fraunces in when it arrives. Plain Iowan
+Old Style (every iPhone, iPad and Mac) is 10 to 13% narrower than Fraunces in
+italic, so headlines changed their line count on the swap and the page under
+them jumped. The two fallback families at the top of `styles.css` are Iowan
+Old Style and Georgia (Windows) under `size-adjust`, plus Fraunces's ascent
+and descent (0.978 and 0.255 em) as `ascent-override`/`descent-override`
+(Chrome and Firefox read those; Safari may not, and `size-adjust` does the
+main work). In iOS Safari (simulator, 440 pt wide) the fallback "Three ways to
+learn." is 376 pt wide against Fraunces's 371, where plain Iowan was 358.
+
+| Face | Iowan Old Style | Georgia |
+| --- | --- | --- |
+| Roman, 400 to 599 (decks) | 103% | 105% |
+| Bold, 600 to 900 (headings) | 99% | 93% |
+| Italic, 400 to 599 (taglines) | 113% | 98% |
+| Bold italic, 600 to 900 (headline accents) | 113% | 90% |
+
+How they were found, in headless Chrome: each value starts as Fraunces's
+width over the face's for every Fraunces text run on the ten pages at 390 and
+1280 px, then was checked by counting the headings whose height changes as
+the fonts load (all fallback, then roman or italic Fraunces first, then all
+Fraunces) on every page at every even width from 360 to 440 px plus 600, 768,
+1024, 1280 and 1440. Height changes, before and after: 129 to 55 with Iowan,
+203 to 57 with Georgia. Iowan bold measures about 100% across all headings;
+99% did best in the count, partly because "Three ways to learn." only just
+fits one line in Fraunces at 393 px and wraps at 390. Some flips remain: a
+headline that only just fits a line in Fraunces can still change.
+
+**Inter fallback (2026-10-29, later the same night).** The body text had the
+same problem. Until Inter arrived it was set in the system font (San
+Francisco on Apple devices), which is 3 to 6% narrower than Inter on this
+site's text, so most paragraphs gained a line on the swap: Terms jumped 0.19
+at 430 px, Modes 0.17 at 412 and 414, /ads 0.15 at 412 to 428 and the 404
+page's footer 0.32 at 768. The "Inter Fallback" faces at the top of
+`styles.css` are Arial (iPhone, iPad, Mac, Windows) under `size-adjust`,
+with Inter's ascent and descent (0.969 and 0.241 em) as overrides and the
+`unicode-range` of Google's Latin Inter file, so a character Inter lacks
+(the "→" in the next-page links) still comes from the system font.
+
+| Weight | Face | size-adjust |
+| --- | --- | --- |
+| 400 to 499 (body) | Arial | 107% |
+| 500 to 599 (nav, chips, bubbles) | Arial | 108.3% |
+| 600 to 900 (buttons, labels, card titles) | Arial Bold | 101% |
+
+Found the same way as the Fraunces values: Inter's width over Arial's for
+every Inter text run on the eleven pages at 390 and 1280 px (1.070 at 400,
+1.083 at 500, 1.016 at 600, 1.028 at 700), then checked by counting the text
+blocks whose height differs between Inter and the fallback on every page at
+15 widths from 320 to 1440 px: 1,056 with the system font, 326 with these
+values (106.5%, 107.5% or 106% for the body did worse). In WebKit (a macOS
+WKWebView, the engine Safari uses) `local("Arial")` resolves and
+`size-adjust` applies: on the eleven pages at eleven widths Inter's width
+over the fallback's is 0.997 to 1.003, against 1.034 to 1.065 for the system
+font, and the mismatched blocks fall from 751 to 225. Android has no Arial,
+so there the stack goes on to the system font as before. With Inter loaded
+nothing changes: element geometry on all eleven pages at 360, 390, 414, 768
+and 1280 px is identical before and after.
+
+The page heroes' `h1` box is `12.25em`, which is 18ch of Fraunces (a `ch` is
+the font's "0", and the fallbacks' old-style figures are 4 to 13% narrower,
+so an 18ch box shrank until Fraunces loaded). It wraps every hero headline as
+18ch did at every width from 320 to 1680 px. When the headline copy or the
+type scale changes much, measure again the same way.
 
 ### 3.2 Scale
 
@@ -783,8 +850,8 @@ caption drops "and the XP is real" (see Open questions). Daily streaks are fine.
   --paper-link: #2546C9;
 
   /* Type */
-  --font-display: "Fraunces", "Iowan Old Style", Georgia, serif;
-  --font-body: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-display: "Fraunces", "Fraunces Fallback Iowan", "Fraunces Fallback Georgia", serif;  /* faces: 3.1 */
+  --font-body: "Inter", "Inter Fallback", system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;  /* faces: 3.1 */
   --fs-display: clamp(2.5rem, 1.6rem + 4.5vw, 4.5rem);       /* 40 to 72 */
   --fs-h2: clamp(1.875rem, 1.3rem + 2.6vw, 3rem);            /* 30 to 48 */
   --fs-deck: clamp(1.375rem, 1.1rem + 1.2vw, 1.875rem);      /* 22 to 30 */

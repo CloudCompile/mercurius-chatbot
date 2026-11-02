@@ -1,7 +1,7 @@
 import Foundation
 
 /// Structured error space for every API call. Features should switch on
-/// these cases to decide UI behavior (show retry, show auth wall, show
+/// these cases to decide UI behavior (show retry, show support, show
 /// generic error, etc.) rather than inspecting messages.
 public enum APIError: Error, Equatable, Sendable {
     /// The device has no usable network connection or the request could
@@ -31,7 +31,17 @@ public enum APIError: Error, Equatable, Sendable {
     /// technical.
     case invalidRequest(reason: String?)
 
-    /// The server requires authentication or authorization (401 / 403).
+    /// The server holds too little of this session's conversation for a
+    /// helper built from it: the 400 `insufficient_history` that
+    /// /api/quiz (and /api/report-card, /api/concept-map) answer with
+    /// fewer than 4 saved messages. The same request gets the same answer
+    /// until the student chats more, so no Retry.
+    case conversationTooShort
+
+    /// A 401 / 403 carrying the server's JSON error envelope. The app has
+    /// no accounts and calls no route that answers one (only the admin
+    /// routes do), so this is a refusal the app can't explain, never a
+    /// sign-in problem.
     case unauthorized
 
     /// The server rate-limited this client (429, per-minute limiter). The
@@ -121,10 +131,17 @@ public enum APIError: Error, Equatable, Sendable {
             return "That took too long. The server may be busy — try again."
         case .invalidRequest:
             return "Something about that request wasn't right. Try again."
+        case .conversationTooShort:
+            return "The conversation is too short for that yet. Chat a bit more and try again."
         case .unauthorized:
-            return "You're not signed in to do that."
+            // Not "you're not signed in": there is no sign-in.
+            return "The server didn't allow that request."
         case .rateLimited:
-            return "You're moving fast — give it a moment, then try again."
+            // Not "you're moving fast": most per-minute limits count a
+            // whole network (lib/rateLimiter's ipLimiter), so in a class
+            // the student who sent one photo can be the one refused. The
+            // windows are a minute long.
+            return "Too many requests at once. Wait a minute, then try again."
         case .quotaExceeded(let message, _, _), .serviceUnavailable(_, let message, _):
             return message  // Unreachable: `serverRefusal` answers both above.
         case .crisisSupport(let message):
@@ -151,8 +168,8 @@ public enum APIError: Error, Equatable, Sendable {
             return true
         case .quotaExceeded, .serviceUnavailable:
             return serverRefusal?.isRetryable ?? false
-        case .messageTooLong, .invalidRequest, .unauthorized, .decoding,
-             .invalidModelOutput, .cancelled, .crisisSupport:
+        case .messageTooLong, .invalidRequest, .conversationTooShort, .unauthorized,
+             .decoding, .invalidModelOutput, .cancelled, .crisisSupport:
             return false
         }
     }

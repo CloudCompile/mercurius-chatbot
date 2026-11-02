@@ -42,3 +42,11 @@
 # support@ address); swap the target for the form URL when it is created.
 /feedback   /support.html   302
 /Feedback   /support.html   302
+
+# No rules for files that shouldn't be public: keep them out of this folder.
+# Netlify publishes every file here and finds files whatever the case of the
+# URL, while rules match it exactly, so a rule can't hide one (on the live
+# site /rEaDmE.md served the old README and /bEta was a 404, though /beta
+# redirects; no list of README rules covers every spelling). The site's docs
+# are docs/marketing-site.md; tests/marketingNotFound.test.js fails on a file
+# here that isn't part of the site.

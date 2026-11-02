@@ -25,11 +25,14 @@
   const panels = Array.from(document.querySelectorAll('[data-mode-panel]'));
 
   if (tabs.length && panels.length) {
+    // The selected tab is the tablist's only Tab stop (roving tabindex);
+    // the others are reached with the arrow keys.
     const activate = (mode) => {
       tabs.forEach((t) => {
         const on = t.dataset.mode === mode;
         t.classList.toggle('is-active', on);
         t.setAttribute('aria-selected', on ? 'true' : 'false');
+        t.tabIndex = on ? 0 : -1;
       });
       panels.forEach((p) => {
         const on = p.dataset.modePanel === mode;
@@ -37,21 +40,22 @@
         p.classList.toggle('is-active', on);
       });
     };
+    const selected = tabs.find((t) => t.getAttribute('aria-selected') === 'true') || tabs[0];
+    activate(selected.dataset.mode);
 
     tabs.forEach((tab) => {
       tab.addEventListener('click', () => activate(tab.dataset.mode));
-      // Arrow-key navigation between tabs (a11y nicety, matches WAI-ARIA
-      // tablist pattern — keeps focus order intuitive).
+      // WAI-ARIA tabs keyboard pattern: Left/Right move to the previous or
+      // next tab (wrapping), Home/End to the first or last, and the tab
+      // that gets focus is selected straight away.
       tab.addEventListener('keydown', (e) => {
         const i = tabs.indexOf(tab);
-        if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
-          e.preventDefault();
-          const next = e.key === 'ArrowRight'
-            ? tabs[(i + 1) % tabs.length]
-            : tabs[(i - 1 + tabs.length) % tabs.length];
-          next.focus();
-          activate(next.dataset.mode);
-        }
+        const n = tabs.length;
+        const to = { ArrowRight: (i + 1) % n, ArrowLeft: (i - 1 + n) % n, Home: 0, End: n - 1 }[e.key];
+        if (to === undefined) return;
+        e.preventDefault();
+        tabs[to].focus();
+        activate(tabs[to].dataset.mode);
       });
     });
   }

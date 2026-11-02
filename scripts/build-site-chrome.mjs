@@ -2,7 +2,7 @@
 // Stamps the parts every marketing page shares: <head>, the site header, the footer and the
 // trailing <script> tags. Each page's <main> is never touched.
 //
-//   node scripts/build-site-chrome.mjs           # rewrite marketing/*.html
+//   node scripts/build-site-chrome.mjs           # rewrite the pages in PAGES
 //   node scripts/build-site-chrome.mjs --check   # exit 1 if any page's shared parts drift from this file
 //
 // A page keeps its own <title>, description, canonical and Open Graph/Twitter text (read from the
@@ -17,15 +17,18 @@ const CHECK = process.argv.includes('--check');
 
 const STORE = 'https://apps.apple.com/app/id6773192313';
 const SITE = 'https://trymercurius.com';
-const CSS_V = '12';
-const JS_V = '10';
+const CSS_V = '16';
+const JS_V = '11';
 const ADS_V = '3';
 const DEMO_V = '1';
 const FONTS = 'https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,500..700;1,9..144,500..700&family=Inter:wght@400..700&display=swap';
 
 const PAGES = ['index.html', 'features.html', 'modes.html', 'how-it-works.html', 'audience.html',
-  'trust.html', 'support.html', 'privacy.html', 'terms.html', 'ads.html'];
+  'trust.html', 'support.html', 'privacy.html', 'terms.html', 'ads.html', '404.html'];
 const REEL_PAGES = new Set(['index.html', 'ads.html']);
+// Netlify serves 404.html, with a 404 status, at whatever path was asked for, so it names no URL
+// of its own (no canonical, no og:url) and asks search engines not to index it.
+const NOT_FOUND = '404.html';
 
 const NAV = [
   ['/features.html', 'Features'],
@@ -101,6 +104,7 @@ function head(page, src) {
     title: g('title'), desc: g('description'), canon: g('canonical'), ogtype: g('og:type'), ogt: g('og:title'),
     ogd: g('og:description'), ogu: g('og:url'), twt: g('twitter:title'), twd: g('twitter:description'),
   };
+  if (page === NOT_FOUND) { delete v.canon; delete v.ogu; }
   for (const [k, val] of Object.entries(v)) if (!val) throw new Error(`${page}: missing ${k}`);
   let extra = '';
   if (REEL_PAGES.has(page)) {
@@ -130,7 +134,7 @@ function head(page, src) {
 
   <title>${esc(v.title)}</title>
   <meta name="description" content="${esc(v.desc)}" />
-  <link rel="canonical" href="${esc(v.canon)}" />
+  ${page === NOT_FOUND ? '<meta name="robots" content="noindex" />' : `<link rel="canonical" href="${esc(v.canon)}" />`}
 
   <meta property="og:type" content="${esc(v.ogtype)}" />
   <meta property="og:title" content="${esc(v.ogt)}" />
@@ -139,8 +143,7 @@ function head(page, src) {
   <meta property="og:image:width" content="1200" />
   <meta property="og:image:height" content="630" />
   <meta property="og:image:alt" content="The Mercurius logo, Merc inside a question mark, over the line: Learn how AI really works." />
-  <meta property="og:url" content="${esc(v.ogu)}" />
-  <meta property="og:site_name" content="Mercurius AI" />
+${page === NOT_FOUND ? '' : `  <meta property="og:url" content="${esc(v.ogu)}" />\n`}  <meta property="og:site_name" content="Mercurius AI" />
   <meta name="twitter:card" content="summary_large_image" />
   <meta name="twitter:title" content="${esc(v.twt)}" />
   <meta name="twitter:description" content="${esc(v.twd)}" />

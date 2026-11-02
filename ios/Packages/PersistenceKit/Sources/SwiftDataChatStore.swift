@@ -138,6 +138,16 @@ public final class SwiftDataChatStore: ChatStore {
         try? context.save()
     }
 
+    public func removeMessage(id messageId: UUID, from conversationId: UUID) {
+        guard let convo = fetchConversation(id: conversationId),
+              let record = convo.messages.first(where: { $0.id == messageId }) else { return }
+        // Out of the relationship first, so the conversation never hands
+        // back a deleted record.
+        convo.messages.removeAll { $0.id == messageId }
+        context.delete(record)
+        try? context.save()
+    }
+
     public func listConversations() -> [ConversationSummary] {
         let descriptor = FetchDescriptor<ConversationRecord>(
             sortBy: [SortDescriptor(\.updatedAt, order: .reverse)]

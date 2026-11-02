@@ -148,6 +148,12 @@ describe('per-turn budgets', () => {
 });
 
 describe('per-session limiter', () => {
+  // The window is a minute and the three turns above take well under a
+  // second, so the session waits most of a minute: never "now", never more.
+  function assertWait(sec) {
+    assert.ok(Number.isInteger(sec) && sec >= 50 && sec <= 60, `retryAfterSec ${sec}`);
+  }
+
   test('a streaming client gets its refusal as an SSE error frame; a JSON client still gets 429', async () => {
     const s = sid();
     for (let i = 0; i < 3; i++) assert.ok((await stream(s, [{ role: 'user', content: `turn ${i}` }])).complete);
@@ -155,8 +161,12 @@ describe('per-session limiter', () => {
     assert.equal(refused.status, 200);
     assert.match(refused.contentType, /text\/event-stream/);
     assert.equal(refused.error.code, 'rate_limited');
-    assert.match(refused.error.error, /moving fast/);
     assert.ok(refused.done, 'terminated with [DONE]');
+    // Shipped iOS shows this text as written, with a Retry button: it says
+    // when that button will work, and the frame carries the same wait.
+    const wait = refused.error.retryAfterSec;
+    assertWait(wait);
+    assert.equal(refused.error.error, `You're moving fast! Take a moment to think about what we've discussed so far. You can send again in ${wait} seconds.`);
 
     const res = await fetch(`${BASE}/api/chat`, {
       method: 'POST',
@@ -166,7 +176,24 @@ describe('per-session limiter', () => {
     assert.equal(res.status, 429);
     const json = await res.json();
     assert.equal(json.error, 'rate_limited');
-    assert.match(json.reply, /moving fast/);
+    assertWait(json.retryAfterSec);
+    assert.ok(json.retryAfterSec <= wait, 'the wait only shrinks: a refused request adds no stamp');
+    assert.equal(res.headers.get('retry-after'), String(json.retryAfterSec));
+    assert.equal(json.reply, `You're moving fast! Take a moment to think about what we've discussed so far. You can send again in ${json.retryAfterSec} seconds.`);
+    assert.equal(json.message, json.reply);
+
+    // The helper routes share the session's bucket and say the same wait.
+    const quiz = await fetch(`${BASE}/api/quiz`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sessionId: s, messages: [] }),
+    });
+    assert.equal(quiz.status, 429);
+    const q = await quiz.json();
+    assert.equal(q.error, 'rate_limited');
+    assertWait(q.retryAfterSec);
+    assert.equal(quiz.headers.get('retry-after'), String(q.retryAfterSec));
+    assert.equal(q.message, `Slow down a moment, then try again in ${q.retryAfterSec} seconds.`);
   });
 });
 

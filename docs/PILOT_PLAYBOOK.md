@@ -208,19 +208,23 @@ What students see in 2.3.0 (16), word for word (`APIError.swift`,
 | "Can't reach Mercurius on this network. Try cellular data or a different Wi-Fi." | The network refused or intercepted the request (what a school filter does) | Cellular; email IT |
 | "You're offline. Reconnect and try again." | No usable connection, or the request never reached the server | Check Wi-Fi is on; if it is, the rule |
 | "The connection dropped. Try again." | The connection dropped mid-reply (app sent to the background, Wi-Fi flapped) | Try again; if many phones at once, the rule |
-| "You're moving fast — give it a moment, then try again." (in a chat, the server's "You're moving fast! Take 60 seconds…") | A per-minute limit, per phone or per network address | Wait a minute; if many phones at once, the rule |
+| "You're moving fast — give it a moment, then try again." (in a chat, the server's "You're moving fast! … You can send again in 42 seconds.", with the real wait) | A per-minute limit, per phone or per network address | Wait that long (at most a minute); if many phones at once, the rule |
 | "The server hit an error. Try again in a moment." | Server error (5xx) | Railway logs |
 | "Something went wrong. Try again." | Anything else | Try again; if many phones at once, the rule |
 
-The server writes these and the app shows them as sent (wording as of main
-720dbac; the server batch may reword them):
+The server writes these and the app shows them as sent (wording as of
+2026-10-29). For a daily limit, 2.3.0 replaces the sentence that says
+"tomorrow" with a local time ("Try again after 11:00 PM.", or for the
+network's limits "Switch to cellular data and try again, or come back
+after 11:00 PM."):
 
 | On the phone | What happened | Do |
 |---|---|---|
 | "Mercurius is helping a lot of students right now. Try again in a minute." | Too many replies at once, for one network address or the whole server (40 and 80 by default) | Cellular helps if it is the address; then Railway logs |
-| "This network has reached today's usage limit. Mercurius will be ready again tomorrow." | `IP_DAILY_USD` for the school address | Cellular; the section 6 rail rule |
-| "Too many new sessions from this network today." | `IP_DAILY_NEW_SESSIONS` | Cellular |
-| "Daily usage limit reached — please try again tomorrow." | `DAILY_BUDGET_USD`, for everyone | Cellular won't help; section 6 rail rule |
+| "This network has reached today's usage limit. Switch to cellular data, or try again tomorrow." | `IP_DAILY_USD` for the school address | Cellular; the section 6 rail rule |
+| "This network has reached today's limit for new devices. Switch to cellular data, or try again tomorrow." | `IP_DAILY_NEW_SESSIONS`: a phone (or browser) the server has not seen before, on the school address | Cellular, once: after that the phone is known and works on the Wi-Fi |
+| "You've used today's lesson turns. Lessons come back tomorrow." (or "…chat turns. Chat comes back tomorrow.") | That student's `SESSION_DAILY_LESSON_TURNS` / `SESSION_DAILY_CHAT_TURNS`, two separate allowances | Try the other (chat or lessons): it usually still works; cellular won't help |
+| "Mercurius has reached today's usage limit and is resting. Please try again tomorrow." | `DAILY_BUDGET_USD`, for everyone | Cellular won't help; section 6 rail rule |
 | "Mercurius is temporarily paused — please try again soon." | The kill switch is on | Section 9: turn it off |
 | "Mercurius is restarting — try again in a few seconds." | A deploy is draining | Wait a few seconds |
 
@@ -614,8 +618,11 @@ line only when I have seen the result myself.
       until midnight in `STREAK_TZ` (it was 7 PM Central, UTC midnight,
       before the AUD-30 fix). Set it to `25` for kickoff week and back to `15`
       on Fri Oct 9, together with `DAILY_BUDGET_USD`. Each variable change
-      restarts the server (and resets the per-IP counters), so make both
-      changes by Wednesday night.
+      restarts the server, so make both changes by Wednesday night. A
+      restart no longer resets a network's daily counts (dollars, photos,
+      new sessions, reports): they are read back from the usage ledger, so
+      a network at its limit stays there until midnight unless the
+      variable is raised.
 - [ ] Other per-IP caps left at defaults (`IP_DAILY_NEW_SESSIONS=60`,
       `CHAT_IP_PER_MIN=300`): the whole club installs behind one school
       address on Thursday. Do not set the eval-server value of 1000 in

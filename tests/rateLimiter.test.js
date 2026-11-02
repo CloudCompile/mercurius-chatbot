@@ -108,9 +108,15 @@ describe('ipLimiter — Express middleware', () => {
     for (let i = 0; i < 3; i++) statuses.push((await fetch(`${base}/chat`)).status);
     assert.deepEqual(statuses, [200, 200, 429]);
 
-    const tripped = await (await fetch(`${base}/chat`)).json();
+    // The bucket is the address, not the student: this request could be a
+    // classmate's first message on the same school Wi-Fi, so the copy names
+    // the network and never tells the reader to slow down.
+    const trippedRes = await fetch(`${base}/chat`);
+    const tripped = await trippedRes.json();
     assert.equal(tripped.error, 'rate_limited');
-    assert.match(tripped.message, /Slow down/);
+    assert.equal(tripped.message, 'Mercurius is getting a lot of messages from this network right now. Try again in a minute.');
+    const retryAfter = Number(trippedRes.headers.get('retry-after'));
+    assert.ok(retryAfter >= 1 && retryAfter <= 60, `"in a minute" holds: Retry-After ${retryAfter}`);
 
     await fetch(`${base}/other`);
     const other = await (await fetch(`${base}/other`)).json();

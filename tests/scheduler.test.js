@@ -133,6 +133,7 @@ function makeDeps({ inactiveIds = [], env = {}, stats = ADMIN_STATS, purge: purg
     imagesBefore: async (ts) => { calls.purges.push(['imagesBefore', ts]); return 2; },
     reportsBefore: async (ts, opts) => { calls.purges.push(['reportsBefore', ts, opts]); return 1; },
     usageBefore: async (ts) => { calls.purges.push(['usageBefore', ts]); return 0; },
+    networkCountsBefore: async (ts) => { calls.purges.push(['networkCountsBefore', ts]); return 0; },
     lessonEventsBefore: async (ts) => { calls.purges.push(['lessonEventsBefore', ts]); return 0; },
     inactiveSessionIds: async (before, limit) => {
       calls.purges.push(['inactiveSessionIds', before, limit]);
@@ -365,6 +366,8 @@ describe('retention', () => {
     // review record for a flagged reply.
     assert.deepEqual(purgeCalls(calls, 'reportsBefore'), [['reportsBefore', t - 180 * DAY, { resolvedOnly: false }]]);
     assert.deepEqual(purgeCalls(calls, 'usageBefore'), [['usageBefore', t - 400 * DAY]]);
+    // A network's sign-up and report counts: only today's read-back needs them.
+    assert.deepEqual(purgeCalls(calls, 'networkCountsBefore'), [['networkCountsBefore', t - 2 * DAY]]);
     assert.deepEqual(purgeCalls(calls, 'lessonEventsBefore'), [['lessonEventsBefore', t - 400 * DAY]]);
     assert.deepEqual(purgeCalls(calls, 'inactiveSessionIds'), [['inactiveSessionIds', t - 365 * DAY, SESSION_BATCH]]);
     assert.deepEqual(calls.deleted, ['s1', 's2']);
@@ -383,15 +386,15 @@ describe('retention', () => {
 
     now.advance(60_000);
     await s.tick();
-    assert.equal(calls.purges.length, 6, 'the sweep tick counted as the image purge too');
+    assert.equal(calls.purges.length, 7, 'the sweep tick counted as the image purge too');
     now.set(Date.UTC(2026, 8, 24, 23, 0, 0));
     await s.tick();
-    assert.equal(dailyPurges(calls).length, 5, 'no second sweep the same day');
+    assert.equal(dailyPurges(calls).length, 6, 'no second sweep the same day');
 
     const t2 = Date.UTC(2026, 8, 25, 8, 0, 0);
     now.set(t2);
     await s.tick();
-    assert.equal(dailyPurges(calls).length, 10, 'runs again the next day');
+    assert.equal(dailyPurges(calls).length, 12, 'runs again the next day');
     assert.deepEqual(purgeCalls(calls, 'messagesBefore')[1], ['messagesBefore', t2 - 90 * DAY]);
   });
 
@@ -402,6 +405,7 @@ describe('retention', () => {
         IMAGE_RETENTION_HOURS: '6',
         REPORT_RETENTION_DAYS: '10',
         USAGE_RETENTION_DAYS: '1.5',
+        NETWORK_COUNT_RETENTION_DAYS: '3',
         LESSON_EVENTS_RETENTION_DAYS: '7',
         SESSION_RETENTION_DAYS: '100',
         RETENTION_UTC_HOUR: '3',
@@ -416,6 +420,7 @@ describe('retention', () => {
     assert.deepEqual(purgeCalls(calls, 'imagesBefore'), [['imagesBefore', t - 6 * HOUR]]);
     assert.deepEqual(purgeCalls(calls, 'reportsBefore'), [['reportsBefore', t - 10 * DAY, { resolvedOnly: false }]]);
     assert.deepEqual(purgeCalls(calls, 'usageBefore'), [['usageBefore', t - 1.5 * DAY]]);
+    assert.deepEqual(purgeCalls(calls, 'networkCountsBefore'), [['networkCountsBefore', t - 3 * DAY]]);
     assert.deepEqual(purgeCalls(calls, 'lessonEventsBefore'), [['lessonEventsBefore', t - 7 * DAY]]);
     assert.deepEqual(purgeCalls(calls, 'inactiveSessionIds'), [['inactiveSessionIds', t - 100 * DAY, SESSION_BATCH]]);
   });
@@ -541,7 +546,7 @@ describe('retention', () => {
     const sweep = logger.entries.find((e) => /retention sweep/.test(e.msg));
     assert.ok(sweep, 'counts are logged even when nothing was deleted');
     assert.equal(sweep.fields.total, 0);
-    assert.deepEqual(sweep.fields.counts, { messages: 0, images: 0, reports: 0, usage: 0, lesson_events: 0, sessions: 0 });
+    assert.deepEqual(sweep.fields.counts, { messages: 0, images: 0, reports: 0, usage: 0, network_counts: 0, lesson_events: 0, sessions: 0 });
   });
 
   test('purge return shapes: number, { changes }, { rowCount }, array, undefined', async () => {
@@ -551,13 +556,14 @@ describe('retention', () => {
         imagesBefore: async () => ({ changes: 4 }),
         reportsBefore: async () => ({ rowCount: 5 }),
         usageBefore: async () => ['x', 'y'],
+        networkCountsBefore: async () => ({ count: 0 }),
         lessonEventsBefore: async () => undefined,
       },
     });
     const s = createScheduler(deps);
     await s.tick();
     const sweep = logger.entries.find((e) => /retention sweep/.test(e.msg));
-    assert.deepEqual(sweep.fields.counts, { messages: 3, images: 4, reports: 5, usage: 2, lesson_events: 0, sessions: 0 });
+    assert.deepEqual(sweep.fields.counts, { messages: 3, images: 4, reports: 5, usage: 2, network_counts: 0, lesson_events: 0, sessions: 0 });
     assert.match(notifies(calls, 'retention')[0].text, /14 rows removed/);
   });
 
@@ -860,6 +866,7 @@ describe('digestStatsFromAdminStats', () => {
           imagesBefore: (ts) => db.purgeImagesBefore(ts),
           reportsBefore: (ts, o) => db.purgeReportsBefore(ts, o),
           usageBefore: (ts) => db.purgeUsageBefore(ts),
+          networkCountsBefore: (ts) => db.purgeNetworkCountsBefore(ts),
           lessonEventsBefore: (ts) => db.purgeLessonEventsBefore(ts),
           inactiveSessionIds: (before, limit) => db.inactiveSessionIds(before, limit),
           deleteSession: (id) => db.deleteSession(id),

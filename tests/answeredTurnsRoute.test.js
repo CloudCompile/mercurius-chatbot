@@ -194,4 +194,109 @@ describe('only answered turns use the daily allowance (AUD-31)', () => {
       await srv.stop();
     }
   });
+
+  // The answer guard holds back a reply that gives a homework answer away and
+  // asks the model again; the quiz asks again when its questions use the
+  // student's own equation. Each is a second call for ONE thing the student
+  // did. Both used to count a second turn, so a homework chat ran out at
+  // half its allowance, and a Quiz-me tap on the last turn failed with
+  // daily_limit instead of showing the quiz.
+  test("the answer guard's rewrite and the quiz's second ask use no second turn", async () => {
+    const dbPath = tmpDb();
+    dbs.push(dbPath);
+    const s = newSession();
+    const b64 = (t) => Buffer.from(t, 'utf8').toString('base64');
+    const leak = 'Like this: 2x + 3 = 13, so 2x = 10 and x = 5.\n\nNow try yours the same way. What is your first step?';
+    // The quiz the mock gives first: one of its questions is on the
+    // student's own equation, so the route asks again.
+    const leaking = {
+      title: 'Algebra Quiz',
+      questions: [
+        { q: 'After subtracting 5 from both sides of 3x + 5 = 20, what results?', options: ['A) 3x = 15', 'B) 3x = 25', 'C) x = 15', 'D) 3x = 5'], answer: 'A', explanation: '20 − 5 = 15.' },
+        { q: 'What undoes adding 4?', options: ['A) Subtract 4', 'B) Add 4', 'C) Divide by 4', 'D) Multiply by 4'], answer: 'A', explanation: 'Subtracting undoes adding.' },
+      ],
+    };
+    const srv = await boot({ SQLITE_PATH: dbPath, SESSION_DAILY_CHAT_TURNS: '3' });
+    try {
+      // Turn 1: the problem.
+      const thread = [{ role: 'user', content: 'what is 3x+5 = 20' }];
+      const first = await sse(srv.base, s, thread);
+      assert.ok(completed(first.events), first.raw);
+      thread.push({ role: 'assistant', content: completed(first.events).reply });
+      // Turn 2: the model's draft states their answer, so it is rewritten.
+      thread.push({ role: 'user', content: `idk MOCK_SAY_B64:${b64(leak)} MOCK_QUIZ_B64:${b64(JSON.stringify(leaking))}` });
+      const guarded = await sse(srv.base, s, thread);
+      const reply = completed(guarded.events);
+      assert.ok(reply, guarded.raw);
+      assert.ok(!/x = 5\b/.test(reply.reply), `the rewrite went out: ${reply.reply}`);
+
+      // Turn 3 of 3 is a Quiz-me tap: its second ask must not be refused.
+      const quiz = await fetch(`${srv.base}/api/quiz`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sessionId: s, messages: [] }),
+      });
+      const quizBody = await quiz.json();
+      assert.equal(quiz.status, 200, JSON.stringify(quizBody));
+      assert.ok(Array.isArray(quizBody.questions) && quizBody.questions.length > 0);
+      assert.ok(!JSON.stringify(quizBody).includes('3x + 5 = 20'), 'the quiz from the second ask');
+
+      const rows = await waitFor(() => readUsage(dbPath, s), (r) => r.length >= 5);
+      assert.deepEqual(rows.map((r) => [r.status, r.answered]), [
+        ['ok', 1],            // turn 1
+        ['ok', 1], ['ok', 0], // turn 2: the draft, then its rewrite
+        ['ok', 1], ['ok', 0], // the quiz tap: the first ask, then the second
+      ]);
+      assert.ok(rows.every((r) => r.cost_usd > 0), 'every call is billed');
+
+      // Three things done, three turns used.
+      const next = await sse(srv.base, s, [{ role: 'user', content: 'What is a token?' }]);
+      assert.equal(errorCode(next.events), 'daily_limit');
+    } finally {
+      await srv.stop();
+    }
+  });
+
+  // The quiz's first ask can be refused or come back empty: it uses no turn,
+  // so the ask that does give the quiz is the one that counts. Every second
+  // ask used to be marked a follow-up, so such a quiz cost no turn at all.
+  test('a quiz whose first ask is refused uses its one turn on the ask that answers', async () => {
+    const dbPath = tmpDb();
+    dbs.push(dbPath);
+    const s = newSession();
+    const refuseFirst = path.join(__dirname, 'fixtures', 'refuseFirstQuizAsk.js');
+    const srv = await boot({ SQLITE_PATH: dbPath, SESSION_DAILY_CHAT_TURNS: '3', NODE_OPTIONS: `--require ${JSON.stringify(refuseFirst)}` });
+    try {
+      // Turns 1 and 2: something to quiz on.
+      const thread = [{ role: 'user', content: 'What is a large language model?' }];
+      const first = await sse(srv.base, s, thread);
+      assert.ok(completed(first.events), first.raw);
+      thread.push({ role: 'assistant', content: completed(first.events).reply }, { role: 'user', content: 'How does it pick the next token?' });
+      assert.ok(completed((await sse(srv.base, s, thread)).events));
+
+      // Turn 3 is the Quiz-me tap: refused, then answered.
+      const quiz = await fetch(`${srv.base}/api/quiz`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sessionId: s, messages: [] }),
+      });
+      const quizBody = await quiz.json();
+      assert.equal(quiz.status, 200, JSON.stringify(quizBody));
+      assert.ok(Array.isArray(quizBody.questions) && quizBody.questions.length > 0);
+
+      const rows = await waitFor(() => readUsage(dbPath, s), (r) => r.length >= 4);
+      // Before: the second ask was answered = 0 too.
+      assert.deepEqual(rows.map((r) => [r.kind, r.answered]), [
+        ['chat', 1], ['chat', 1],
+        ['helper', 0], ['helper', 1], // the refused ask, then the one that answered
+      ]);
+      assert.ok(rows.every((r) => r.cost_usd > 0), 'every call is billed');
+
+      // Before: answered, as if the quiz had been free.
+      const next = await sse(srv.base, s, [{ role: 'user', content: 'What is a token?' }]);
+      assert.equal(errorCode(next.events), 'daily_limit');
+    } finally {
+      await srv.stop();
+    }
+  });
 });

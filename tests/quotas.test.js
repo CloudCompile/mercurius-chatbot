@@ -154,7 +154,7 @@ describe('session daily turn caps', () => {
     assert.equal(r.error, 'daily_limit');
     assert.equal(r.scope, 'session');
     assert.equal(r.reason, 'lesson_turns');
-    assert.equal(r.message, "You've used today's lesson turns. Mercurius will be ready again tomorrow.");
+    assert.equal(r.message, "You've used today's lesson turns. Lessons come back tomorrow.");
     assert.ok(Number.isInteger(r.retryAfterSec) && r.retryAfterSec >= 1 && r.retryAfterSec <= 86400);
   });
 
@@ -168,7 +168,7 @@ describe('session daily turn caps', () => {
     const r = quotas.check({ sessionId: SID, ip: IP, kind: 'chat' });
     assert.equal(r.ok, false);
     assert.equal(r.reason, 'chat_turns');
-    assert.equal(r.message, "You've used today's chat turns. Mercurius will be ready again tomorrow.");
+    assert.equal(r.message, "You've used today's chat turns. Chat comes back tomorrow.");
   });
 
   test('helper turns count toward the chat cap', () => {
@@ -237,6 +237,21 @@ describe('session daily turn caps', () => {
     const r = quotas.check({ sessionId: SID, ip: IP, kind: 'chat' });
     assert.equal(r.ok, false);
     assert.equal(r.reason, 'session_usd');
+  });
+
+  test('check({ counted: false }) (a call that uses no turn) skips only the turn allowance', () => {
+    quotas.configure({ SESSION_DAILY_LESSON_TURNS: 1, SESSION_DAILY_CHAT_TURNS: 1, SESSION_DAILY_USD: 0.1 });
+    quotas.record({ sessionId: SID, ip: IP, kind: 'lesson', usd: 0.01 });
+    quotas.record({ sessionId: SID, ip: IP, kind: 'chat', usd: 0.01 });
+    for (const kind of ['lesson', 'chat', 'helper']) {
+      assert.notEqual(quotas.check({ sessionId: SID, ip: IP, kind }).ok, true, kind);
+      assert.deepEqual(quotas.check({ sessionId: SID, ip: IP, kind, counted: false }), { ok: true }, kind);
+    }
+    // The dollars and the in-flight caps still refuse it.
+    quotas.record({ sessionId: SID, ip: IP, kind: 'chat', usd: 0.1, counted: false });
+    assert.equal(quotas.check({ sessionId: SID, ip: IP, kind: 'chat', counted: false }).reason, 'session_usd');
+    quotas.configure({ SESSION_DAILY_USD: 10, MAX_INFLIGHT: 0 });
+    assert.equal(quotas.check({ sessionId: SID, ip: IP, kind: 'chat', counted: false }).reason, 'inflight_global');
   });
 });
 
@@ -321,7 +336,7 @@ describe('noteNewSession() per-ip cap', () => {
     assert.equal(r.error, 'daily_limit');
     assert.equal(r.scope, 'ip');
     assert.equal(r.reason, 'new_sessions');
-    assert.equal(r.message, 'Too many new sign-ups from this network today. Switch to cellular data, or try again tomorrow.');
+    assert.equal(r.message, "This network has reached today's limit for new devices. Switch to cellular data, or try again tomorrow.");
     assert.ok(r.retryAfterSec >= 1);
 
     // The refused attempt did not bump the counter.
@@ -556,6 +571,31 @@ describe('product-day rollover (AUD-30)', () => {
     assert.equal(quotas.hydrateSession(SID, [{ kind: 'chat', count: 1, usd: 0.05 }]), true);
     assert.equal(quotas.snapshot().sessions.totals.chatTurns, 1);
   });
+
+  // The first read after a restart began at 11:59:59.9 PM and its rows came
+  // back after midnight. They are the old day's: applied, they used to start
+  // the new day used up, and mark it read so the right read couldn't lower it.
+  test("a read for the day that just ended is skipped, and the new day's read still applies", () => {
+    process.env.STREAK_TZ = 'America/Chicago';
+    mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-10-30T04:59:59.900Z') }); // 11:59:59.9 PM CDT
+    quotas.__resetForTest();
+    quotas.configure({ SESSION_DAILY_LESSON_TURNS: 40, IP_DAILY_USD: 10 });
+    const readFor = quotas.snapshot().day;
+    assert.equal(readFor, '2026-10-29');
+    mock.timers.setTime(Date.parse('2026-10-30T05:00:00.150Z')); // the rows arrive after midnight
+
+    assert.equal(quotas.hydrateSession(SID, [{ kind: 'lesson', count: 40, usd: 0.2 }], { reports: 0, day: readFor }), false);
+    assert.equal(quotas.hydrateIp(IP, { usd: 10.5, images: 0, imageBytes: 0, newSessions: 0, reports: 0 }, { day: readFor }), false);
+    assert.deepEqual(quotas.check({ sessionId: SID, ip: IP, kind: 'lesson' }), { ok: true });
+    const snap = quotas.snapshot();
+    assert.equal(snap.sessions.hydrated, 0, 'not marked read');
+
+    // The new day's read (since the new midnight) still applies.
+    assert.equal(quotas.hydrateSession(SID, [{ kind: 'lesson', count: 2, usd: 0.01 }], { day: '2026-10-30' }), true);
+    assert.equal(quotas.hydrateIp(IP, { usd: 0.5 }, { day: '2026-10-30' }), true);
+    assert.equal(quotas.snapshot().sessions.totals.lessonTurns, 2);
+    assert.equal(quotas.snapshot().ips.usd, 0.5);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -623,6 +663,100 @@ describe('hydrateSession()', () => {
   test('hydration does not touch ip counters', () => {
     quotas.hydrateSession(SID, [{ kind: 'chat', count: 1, usd: 5 }]);
     assert.equal(quotas.snapshot().ips.tracked, 0);
+  });
+
+  test("seeds the session's report count (from the reports table) and only raises it", () => {
+    quotas.configure({ SESSION_DAILY_REPORTS: 2 });
+    assert.equal(quotas.hydrateSession(SID, [], { reports: '2' }), true);
+    assert.deepEqual(quotas.noteReport(SID, IP), { ok: false, scope: 'session' });
+
+    quotas.configure({ SESSION_DAILY_REPORTS: 3 });
+    assert.equal(quotas.noteReport('sess_b', IP).ok, true);
+    assert.equal(quotas.noteReport('sess_b', IP).ok, true);
+    assert.equal(quotas.hydrateSession('sess_b', [], { reports: 1 }), true);
+    assert.equal(quotas.noteReport('sess_b', IP).ok, true, 'memory had 2, the table 1: the third is allowed');
+    assert.deepEqual(quotas.noteReport('sess_b', IP), { ok: false, scope: 'session' });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// forgetSession() — the erase route
+// ---------------------------------------------------------------------------
+describe('forgetSession()', () => {
+  test("drops the session's day (and its read-back flag), keeps the network's and other sessions'", () => {
+    quotas.configure({ SESSION_DAILY_CHAT_TURNS: 1, SESSION_DAILY_REPORTS: 1, IP_DAILY_USD: 1 });
+    quotas.hydrateSession(SID, [{ kind: 'chat', count: 1, usd: 0.5 }]);
+    quotas.record({ sessionId: 'sess_b', ip: IP, kind: 'chat', usd: 0.6 });
+    assert.equal(quotas.noteReport(SID, IP).ok, true);
+    assert.equal(quotas.check({ sessionId: SID, ip: IP, kind: 'chat' }).reason, 'chat_turns');
+
+    assert.equal(quotas.forgetSession(SID), true);
+    assert.equal(quotas.forgetSession(SID), false, 'nothing left to drop');
+    assert.equal(quotas.forgetSession(undefined), false);
+
+    const snap = quotas.snapshot();
+    assert.equal(snap.sessions.tracked, 1, 'only the other session is held');
+    assert.equal(snap.ips.usd, 0.6, "the network's dollars stay");
+    assert.equal(quotas.check({ sessionId: SID, ip: '9.9.9.9', kind: 'chat' }).ok, true, 'a fresh day for the id');
+    assert.equal(quotas.noteReport(SID, '9.9.9.9').ok, true, 'its report count went too');
+    assert.equal(quotas.hydrateSession(SID, [{ kind: 'chat', count: 0, usd: 0 }]), true, 'it can be read back again');
+    assert.equal(quotas.check({ sessionId: 'sess_b', ip: '9.9.9.9', kind: 'chat' }).reason, 'chat_turns', 'the other session keeps its day');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// hydrateIp() — a network's allowances after a restart
+// ---------------------------------------------------------------------------
+describe('hydrateIp()', () => {
+  test("seeds the network's dollars, photo count and photo bytes, so its caps hold after a restart", () => {
+    quotas.configure({ IP_DAILY_USD: 1, IP_DAILY_IMAGES: 3, IP_DAILY_IMAGE_BYTES: 1000 });
+    assert.equal(quotas.hydrateIp(IP, { usd: 1.2, images: 0, imageBytes: 0 }), true);
+    assert.equal(quotas.check({ sessionId: 'fresh', ip: IP, kind: 'chat' }).reason, 'ip_usd');
+
+    assert.equal(quotas.hydrateIp('2.2.2.2', { usd: 0, images: 3, imageBytes: 10 }), true);
+    assert.equal(quotas.check({ sessionId: 'fresh', ip: '2.2.2.2', kind: 'image' }).reason, 'ip_images');
+    assert.equal(quotas.check({ sessionId: 'fresh', ip: '2.2.2.2', kind: 'chat' }).ok, true, 'chat is not a photo');
+
+    assert.equal(quotas.hydrateIp('3.3.3.3', { usd: 0, images: 1, imageBytes: 1000 }), true);
+    assert.equal(quotas.check({ sessionId: 'fresh', ip: '3.3.3.3', kind: 'image' }).reason, 'ip_images', 'the byte cap');
+  });
+
+  test('applies once per network per day and only raises', () => {
+    quotas.record({ sessionId: SID, ip: IP, kind: 'image', usd: 0.4, bytes: 50 });
+    assert.equal(quotas.hydrateIp(IP, { usd: '0.1', images: '0', imageBytes: '500' }), true, 'pg strings');
+    assert.equal(quotas.hydrateIp(IP, { usd: 9, images: 9, imageBytes: 9 }), false);
+    const snap = quotas.snapshot();
+    assert.equal(snap.ips.usd, 0.4, 'memory had more dollars than the ledger');
+    assert.equal(quotas.check({ sessionId: SID, ip: IP, kind: 'image' }).ok, true);
+    quotas.configure({ IP_DAILY_IMAGE_BYTES: 500 });
+    assert.equal(quotas.check({ sessionId: SID, ip: IP, kind: 'image' }).reason, 'ip_images', 'the ledger had more bytes');
+  });
+
+  test("seeds the network's new sessions and reports, so those caps hold after a restart too", () => {
+    quotas.configure({ IP_DAILY_NEW_SESSIONS: 2, IP_DAILY_REPORTS: 3 });
+    assert.equal(quotas.hydrateIp(IP, { usd: 0, images: 0, imageBytes: 0, newSessions: '2', reports: 3 }), true);
+    assert.equal(quotas.newSessionAllowed(IP).reason, 'new_sessions');
+    assert.equal(quotas.noteNewSession(IP).ok, false);
+    assert.deepEqual(quotas.noteReport('fresh', IP), { ok: false, scope: 'ip' });
+
+    // Only raises: memory already past the ledger keeps its count.
+    assert.equal(quotas.noteNewSession('2.2.2.2').ok, true);
+    assert.equal(quotas.noteNewSession('2.2.2.2').ok, true);
+    assert.equal(quotas.hydrateIp('2.2.2.2', { newSessions: 1, reports: 0 }), true);
+    assert.equal(quotas.noteNewSession('2.2.2.2').ok, false);
+    // An older result without the two fields counts them as 0.
+    assert.equal(quotas.hydrateIp('3.3.3.3', { usd: 0, images: 0, imageBytes: 0 }), true);
+    assert.equal(quotas.noteNewSession('3.3.3.3').ok, true);
+  });
+
+  test('a missing result (failed query) or no address is skipped and keeps the slot', () => {
+    assert.equal(quotas.hydrateIp(IP, undefined), false);
+    assert.equal(quotas.hydrateIp(IP, null), false);
+    assert.equal(quotas.hydrateIp(IP, []), false);
+    assert.equal(quotas.hydrateIp('', { usd: 5 }), false);
+    assert.equal(quotas.hydrateIp(IP, { usd: 0.5 }), true);
+    assert.equal(quotas.snapshot().ips.usd, 0.5);
+    assert.equal(quotas.snapshot().sessions.tracked, 0, 'no session counter is touched');
   });
 });
 

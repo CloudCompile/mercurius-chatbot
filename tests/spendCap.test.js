@@ -343,7 +343,10 @@ describe('spend cap closes the chat handler', () => {
     const expected = Math.ceil((productDay.nextDayStartMs() - Date.now()) / 1000);
     assert.ok(Math.abs(json.retryAfterSec - expected) <= 5, `retryAfterSec ${json.retryAfterSec} vs ${expected}`);
     assert.equal(res.headers.get('retry-after'), String(json.retryAfterSec));
-    assert.match(json.message, /tomorrow/);
+    // The copy every client shows (2.3.0 and the widget read `message`) is
+    // the one that says the limit is Mercurius's, not the student's.
+    assert.equal(json.message, "Mercurius has reached today's usage limit and is resting. Please try again tomorrow.");
+    assert.equal(json.reply, json.message);
   });
 
   test('the streamed refusal frame carries the same fields (AUD-30)', async () => {
@@ -362,7 +365,9 @@ describe('spend cap closes the chat handler', () => {
     const frame = JSON.parse(frames[0]);
     assert.equal(frame.type, 'error');
     assert.equal(frame.code, 'spend_cap');
-    assert.equal(frame.error, 'Daily usage limit reached — please try again tomorrow.');
+    // Mercurius's limit, for everyone: the student's own reads "You've
+    // reached today's usage limit." Shipped iOS shows this text as written.
+    assert.equal(frame.error, "Mercurius has reached today's usage limit and is resting. Please try again tomorrow.");
     assert.equal(frame.scope, 'global');
     assert.equal(frame.retryable, false);
     assert.ok(Number.isInteger(frame.retryAfterSec) && frame.retryAfterSec > 0 && frame.retryAfterSec <= 25 * 3600);

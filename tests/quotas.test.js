@@ -154,7 +154,7 @@ describe('session daily turn caps', () => {
     assert.equal(r.error, 'daily_limit');
     assert.equal(r.scope, 'session');
     assert.equal(r.reason, 'lesson_turns');
-    assert.equal(r.message, "You've used today's lesson turns. Mercurius will be ready again tomorrow.");
+    assert.equal(r.message, "You've used today's lesson turns. Lessons come back tomorrow.");
     assert.ok(Number.isInteger(r.retryAfterSec) && r.retryAfterSec >= 1 && r.retryAfterSec <= 86400);
   });
 
@@ -168,7 +168,7 @@ describe('session daily turn caps', () => {
     const r = quotas.check({ sessionId: SID, ip: IP, kind: 'chat' });
     assert.equal(r.ok, false);
     assert.equal(r.reason, 'chat_turns');
-    assert.equal(r.message, "You've used today's chat turns. Mercurius will be ready again tomorrow.");
+    assert.equal(r.message, "You've used today's chat turns. Chat comes back tomorrow.");
   });
 
   test('helper turns count toward the chat cap', () => {
@@ -336,7 +336,7 @@ describe('noteNewSession() per-ip cap', () => {
     assert.equal(r.error, 'daily_limit');
     assert.equal(r.scope, 'ip');
     assert.equal(r.reason, 'new_sessions');
-    assert.equal(r.message, 'Too many new sign-ups from this network today. Switch to cellular data, or try again tomorrow.');
+    assert.equal(r.message, "This network has reached today's limit for new devices. Switch to cellular data, or try again tomorrow.");
     assert.ok(r.retryAfterSec >= 1);
 
     // The refused attempt did not bump the counter.

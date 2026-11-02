@@ -1358,8 +1358,9 @@ function noteAdminAuthFailure() {
 }
 
 // `isRateLimited(sessionId)` is async (the limiter interface is). Callers
-// `await` it. 10/min is above any human typing rate — a lesson turn takes
-// 5–15 s to stream — and below what a script needs to be worth running.
+// `await` it through refuseIfRateLimited. 10/min is above any human typing
+// rate — a lesson turn takes 5–15 s to stream — and below what a script
+// needs to be worth running.
 const isRateLimited = sessionLimiter(60 * 1000, envInt('SESSION_PER_MIN', 10));
 
 // Per-turn budget for every user message the model sees in /api/chat.
@@ -1540,11 +1541,14 @@ const STREAM_MAX_MS = envInt('STREAM_WATCHDOG_MS', envInt('STREAM_MAX_MS', 15000
 // Wire contract (stable — clients key off `error`):
 //   503 restarting | service_disabled | spend_cap | busy
 //   429 daily_limit  { scope: 'session' | 'ip', retryAfterSec }
+//   429 rate_limited { retryAfterSec }  (the per-minute session limiter,
+//                    refuseIfRateLimited below; not part of the gate)
 // Every refusal also carries `retryable` (and `scope` / `retryAfterSec` when
 // known) in both shapes, the JSON body and the SSE error frame. Those are
-// additive: 2.0.0, 2.3.0 and the widget decode `error`/`code` and the copy
-// and ignore the rest; PR #43's iOS client reads `scope` and `retryAfterSec`
-// from both. A daily allowance and the spend cap come back at the next
+// additive: 2.0.0 and the widget decode `error`/`code` and the copy and
+// ignore the rest; 2.3.0 (17), which carries PR #43, also reads `scope` and
+// `retryAfterSec` from both, and they change only a daily_limit's copy and
+// Retry (ServerRefusal.swift). A daily allowance and the spend cap come back at the next
 // product-day midnight (lib/productDay, STREAK_TZ), and `retryAfterSec`
 // counts down to it.
 const ONE_DAY_MS = 24 * 60 * 60 * 1000;
@@ -1624,12 +1628,14 @@ function gate(req, res, { kind = 'chat', sessionId = null } = {}) {
     // Not retryable (AUD-30): the budget opens again at the product-day
     // midnight, which `retryAfterSec` (and the Retry-After header) count
     // down to, so "tomorrow" is true.
+    // Every client shows `message` (the SSE frame's `error` is `message`),
+    // so it says whose limit this is: Mercurius's, for every student, not
+    // the student's own ("You've reached today's usage limit.").
     return sendRefusal(req, res, {
       status: 503,
       error: 'spend_cap',
       scope: 'global',
-      reply: "Mercurius has reached today's usage limit and is resting. Please try again tomorrow.",
-      message: "Daily usage limit reached — please try again tomorrow.",
+      message: "Mercurius has reached today's usage limit and is resting. Please try again tomorrow.",
       retryAfterSec: spendCap.secondsUntilReset(),
     });
   }
@@ -1653,6 +1659,24 @@ function refuseWithVerdict(req, res, verdict) {
     message: verdict.message,
     retryAfterSec: verdict.retryAfterSec,
   });
+}
+
+// The per-minute session limiter (SESSION_PER_MIN), on every model route:
+// 429 rate_limited, as an SSE error frame for a streaming chat like every
+// refusal. Its window is a minute, but it lets the session through again as
+// soon as the oldest request in it turns a minute old, and it knows when
+// that is: the copy says so, and `retryAfterSec` (and Retry-After) carry
+// the same number. Shipped iOS builds (2.0.0, 2.3.0) and the Mac app show a
+// chat frame's text as written, with a Retry button, and read no
+// retryAfterSec for this code (it is not one of their refusal codes); on
+// the JSON routes they show their own "give it a moment" copy for any 429
+// but daily_limit. The widget shows the text everywhere. `copy` gets the
+// wait in words ("42 seconds"). Returns true when the request was refused.
+async function refuseIfRateLimited(req, res, sessionId, copy) {
+  if (!(await isRateLimited(sessionId))) return false;
+  const retryAfterSec = Math.max(1, isRateLimited.retryAfterSec(sessionId));
+  const wait = retryAfterSec === 1 ? '1 second' : `${retryAfterSec} seconds`;
+  return sendRefusal(req, res, { status: 429, error: 'rate_limited', message: copy(wait), retryAfterSec });
 }
 
 // claudeCall re-checks quotas atomically at call time (the gate above ran
@@ -1905,13 +1929,7 @@ app.post('/api/chat', chatLimiter, validate(ChatRequest, { endpoint: '/api/chat'
   const chosenModel = picked.model;
 
   // Rate limit (an SSE error frame for streaming clients, like every refusal)
-  if (await isRateLimited(sessionId)) {
-    return sendRefusal(req, res, {
-      status: 429,
-      error: 'rate_limited',
-      message: "You're moving fast! Take 60 seconds to think about what we've discussed so far, then come back.",
-    });
-  }
+  if (await refuseIfRateLimited(req, res, sessionId, (wait) => `You're moving fast! Take a moment to think about what we've discussed so far. You can send again in ${wait}.`)) return;
 
   // Lessons stay in curriculum mode for the WHOLE conversation: the iOS client
   // re-sends the [CURRICULUM: …] opener as a hidden first wire message on every
@@ -2891,9 +2909,7 @@ app.post('/api/quiz', chatLimiter, validate(QuizRequest, { endpoint: '/api/quiz'
   const { sessionId } = req.validated;
   // Per-session rate limit — this is an Anthropic-backed route, so it gets the
   // same session bucket as /api/chat (survives IP rotation on mobile).
-  if (await isRateLimited(sessionId)) {
-    return res.status(429).json({ error: 'rate_limited', message: 'Slow down a moment, then try again.' });
-  }
+  if (await refuseIfRateLimited(req, res, sessionId, (wait) => `Slow down a moment, then try again in ${wait}.`)) return;
   if (await refuseUnseenSession(req, res, sessionId)) return;
   await readQuotasBack(req, sessionId);
   if (gate(req, res, { kind: 'helper', sessionId })) return;
@@ -2965,9 +2981,7 @@ app.post('/api/report-card', chatLimiter, validate(ReportCardRequest, { endpoint
   const { sessionId } = req.validated;
   // Per-session rate limit — this is an Anthropic-backed route, so it gets the
   // same session bucket as /api/chat (survives IP rotation on mobile).
-  if (await isRateLimited(sessionId)) {
-    return res.status(429).json({ error: 'rate_limited', message: 'Slow down a moment, then try again.' });
-  }
+  if (await refuseIfRateLimited(req, res, sessionId, (wait) => `Slow down a moment, then try again in ${wait}.`)) return;
   if (await refuseUnseenSession(req, res, sessionId)) return;
   await readQuotasBack(req, sessionId);
   if (gate(req, res, { kind: 'helper', sessionId })) return;
@@ -3010,9 +3024,7 @@ app.post('/api/unit-test/grade', chatLimiter, validate(UnitTestGradeRequest, { e
   if (crisisSignal(answer)) return res.json({ ...CRISIS_GRADE });
   // Per-session rate limit — this is an Anthropic-backed route, so it gets the
   // same session bucket as /api/chat (survives IP rotation on mobile).
-  if (await isRateLimited(sessionId)) {
-    return res.status(429).json({ error: 'rate_limited', message: 'Slow down a moment, then try grading again.' });
-  }
+  if (await refuseIfRateLimited(req, res, sessionId, (wait) => `Slow down a moment, then try grading again in ${wait}.`)) return;
   if (await refuseUnseenSession(req, res, sessionId)) return;
   await readQuotasBack(req, sessionId);
   if (gate(req, res, { kind: 'helper', sessionId })) return;
@@ -3055,9 +3067,7 @@ app.post('/api/concept-map', chatLimiter, validate(ConceptMapRequest, { endpoint
   const { sessionId } = req.validated;
   // Per-session rate limit — this is an Anthropic-backed route, so it gets the
   // same session bucket as /api/chat (survives IP rotation on mobile).
-  if (await isRateLimited(sessionId)) {
-    return res.status(429).json({ error: 'rate_limited', message: 'Slow down a moment, then try again.' });
-  }
+  if (await refuseIfRateLimited(req, res, sessionId, (wait) => `Slow down a moment, then try again in ${wait}.`)) return;
   if (await refuseUnseenSession(req, res, sessionId)) return;
   await readQuotasBack(req, sessionId);
   if (gate(req, res, { kind: 'helper', sessionId })) return;
@@ -3373,9 +3383,7 @@ app.post('/api/factcheck', chatLimiter, asyncRoute(async (req, res) => {
     return res.status(400).json({ error: 'invalid_request', message: 'Provide valid sessionId and claim (max 1000 chars).' });
   }
   if (crisisSignal(claim)) return sendCrisisResult(res);
-  if (await isRateLimited(sessionId)) {
-    return res.status(429).json({ error: 'rate_limited', message: 'Slow down — try again in a moment.' });
-  }
+  if (await refuseIfRateLimited(req, res, sessionId, (wait) => `Slow down — try again in ${wait}.`)) return;
   if (await refuseUnseenSession(req, res, sessionId)) return;
   await readQuotasBack(req, sessionId);
   if (gate(req, res, { kind: 'helper', sessionId })) return;
@@ -3414,9 +3422,7 @@ app.post('/api/analyze', chatLimiter, asyncRoute(async (req, res) => {
   if (!isValidSessionId(sessionId) || !aiOutput || typeof aiOutput !== 'string' || aiOutput.length > 3000) {
     return res.status(400).json({ error: 'invalid_request', message: 'Provide valid sessionId and aiOutput (max 3000 chars).' });
   }
-  if (await isRateLimited(sessionId)) {
-    return res.status(429).json({ error: 'rate_limited', message: 'Slow down — try again in a moment.' });
-  }
+  if (await refuseIfRateLimited(req, res, sessionId, (wait) => `Slow down — try again in ${wait}.`)) return;
   if (await refuseUnseenSession(req, res, sessionId)) return;
   await readQuotasBack(req, sessionId);
   if (gate(req, res, { kind: 'helper', sessionId })) return;
@@ -3455,9 +3461,7 @@ app.get('/api/pre-briefing', chatLimiter, asyncRoute(async (req, res) => {
   if (!isValidSessionId(sessionId)) return res.status(400).json({ error: 'invalid_request', message: 'Session ID missing or invalid.' });
   // Per-session rate limit — this is an Anthropic-backed route, so it gets the
   // same session bucket as /api/chat (survives IP rotation on mobile).
-  if (await isRateLimited(sessionId)) {
-    return res.status(429).json({ error: 'rate_limited', message: 'Slow down a moment, then try again.' });
-  }
+  if (await refuseIfRateLimited(req, res, sessionId, (wait) => `Slow down a moment, then try again in ${wait}.`)) return;
   if (await refuseUnseenSession(req, res, sessionId)) return;
   await readQuotasBack(req, sessionId);
   if (gate(req, res, { kind: 'helper', sessionId })) return;

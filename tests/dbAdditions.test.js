@@ -20,7 +20,9 @@ const dbPath = path.join(os.tmpdir(), `merc-additions-${crypto.randomBytes(4).to
 process.env.SQLITE_PATH = dbPath;         // must be set BEFORE db.js is required
 delete process.env.DATABASE_URL;          // force the SQLite driver
 const db = require('../db');
+const productDay = require('../lib/productDay');
 
+const DAY = 86_400_000;
 function sid() { return 'test_' + crypto.randomBytes(8).toString('hex'); }
 
 // There is no name helper any more (nothing may write one); read the legacy
@@ -130,10 +132,67 @@ describe('usage ledger', () => {
     const got = await db.networkUsageSince(net, t0);
     assert.ok(Math.abs(got.usd - 0.75) < 1e-9, `every call billed today (${got.usd})`);
     assert.deepEqual([got.images, got.imageBytes], [2, 1000]);
-    assert.deepEqual(await db.networkUsageSince('net_never_seen', t0), { usd: 0, images: 0, imageBytes: 0 });
-    assert.deepEqual(await db.networkUsageSince(null, t0), { usd: 0, images: 0, imageBytes: 0 }, 'no hash, no query');
+    const none = { usd: 0, images: 0, imageBytes: 0, newSessions: 0, reports: 0 };
+    assert.deepEqual(await db.networkUsageSince('net_never_seen', t0), none);
+    assert.deepEqual(await db.networkUsageSince(null, t0), none, 'no hash, no query');
     const rows = await db.queryRaw('SELECT bytes FROM usage WHERE ip_hash = ? ORDER BY ts', [net]);
     assert.deepEqual(rows.map((r) => r.bytes), [null, null, null, 700, 300], 'bytes only on photo rows');
+  });
+
+  test("networkUsageSince counts the network's new sessions and reports (rows with no session id), never as turns", async () => {
+    const t0 = Date.now();
+    const net = 'net_' + crypto.randomBytes(4).toString('hex');
+    // What claudeCall.recordNetworkEvent writes.
+    const mark = (kind, ts) => db.recordUsage({ ts, ipHash: net, route: kind === 'report' ? '/api/report' : 'new-session', kind, costUsd: 0, status: 'ok', answered: false });
+    await mark('session', t0 - 10); // yesterday's, say
+    await mark('session', t0 + 1);
+    await mark('session', t0 + 2);
+    await mark('report', t0 + 3);
+    await db.recordUsage({ ts: t0 + 4, ipHash: net, sessionId: sid(), route: '/api/chat', kind: 'chat', costUsd: 0.1, status: 'ok' });
+    const got = await db.networkUsageSince(net, t0);
+    assert.deepEqual([got.newSessions, got.reports, got.images], [2, 1, 0]);
+    assert.ok(Math.abs(got.usd - 0.1) < 1e-9);
+    const sessionIds = await db.queryRaw("SELECT session_id FROM usage WHERE ip_hash = ? AND kind IN ('session', 'report')", [net]);
+    assert.deepEqual(sessionIds.map((r) => r.session_id), [null, null, null, null]);
+  });
+
+  // They outlive an erasure and only today's read-back needs them, so they
+  // go after two days instead of with the 400-day usage purge.
+  test("purgeNetworkCountsBefore deletes a network's old sign-up and report rows, never today's or any other kind", async () => {
+    const net = 'net_' + crypto.randomBytes(4).toString('hex');
+    const today = productDay.startOfDayMs();
+    const rec = (kind, ts, extra = {}) => db.recordUsage({ ts, ipHash: net, route: kind, kind, costUsd: 0, status: 'ok', answered: false, ...extra });
+    await rec('session', today - 3 * DAY);
+    await rec('report', today - 3 * DAY);
+    await rec('chat', today - 3 * DAY, { sessionId: sid(), costUsd: 0.01, answered: true });
+    await rec('image', today - 3 * DAY, { sessionId: sid(), answered: true, bytes: 10 });
+    await rec('session', today);
+    await rec('report', today);
+    const left = async () => (await db.queryRaw('SELECT kind, ts FROM usage WHERE ip_hash = ? ORDER BY ts, kind', [net]))
+      .map((r) => `${r.kind}@${r.ts === today ? 'today' : 'old'}`);
+
+    // A window that reaches into today (a too-short NETWORK_COUNT_RETENTION_DAYS)
+    // still keeps today's counts.
+    const n = await db.purgeNetworkCountsBefore(Date.now() + DAY);
+    assert.ok(n >= 2, `deleted ${n}`);
+    assert.deepEqual(await left(), ['chat@old', 'image@old', 'report@today', 'session@today']);
+    assert.equal(await db.purgeNetworkCountsBefore(today - 2 * DAY), 0, 'idempotent');
+    const counted = await db.networkUsageSince(net, today);
+    assert.deepEqual([counted.newSessions, counted.reports], [1, 1], "today's read-back is untouched");
+  });
+
+  test("sessionReportsSince counts a session's stored reports since a time", async () => {
+    const t0 = Date.now();
+    const s = sid();
+    await db.getOrCreateSession(s);
+    await db.saveReport({ sessionId: s, content: 'old', createdAt: t0 - 10 });
+    await db.saveReport({ sessionId: s, content: 'a', createdAt: t0 + 1 });
+    await db.saveReport({ sessionId: s, content: 'b', createdAt: t0 + 2 });
+    await db.saveReport({ sessionId: sid(), content: 'theirs', createdAt: t0 + 3 });
+    assert.equal(await db.sessionReportsSince(s, t0), 2);
+    assert.equal(await db.sessionReportsSince(sid(), t0), 0);
+    await db.deleteSession(s);
+    assert.equal(await db.sessionReportsSince(s, 0), 0, 'erased with the session');
   });
 
   test('recordUsage fills defaults and never throws', async () => {

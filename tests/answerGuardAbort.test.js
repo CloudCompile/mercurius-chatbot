@@ -33,7 +33,9 @@ function readUsage(dbPath) {
   const Database = require('better-sqlite3');
   const sqlite = new Database(dbPath, { readonly: true });
   try {
-    return sqlite.prepare('SELECT status, error_kind, answered, input_tokens, output_tokens, cost_usd, duration_ms FROM usage ORDER BY id').all();
+    // Model calls only: a session's first request also leaves the network's
+    // $0 new-session row (kind 'session').
+    return sqlite.prepare("SELECT status, error_kind, answered, input_tokens, output_tokens, cost_usd, duration_ms FROM usage WHERE kind <> 'session' ORDER BY id").all();
   } finally {
     sqlite.close();
   }

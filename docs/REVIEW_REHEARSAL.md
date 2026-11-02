@@ -154,8 +154,9 @@ Tick each line only when you saw the expected result yourself.
     (`ANTHROPIC_MOCK=1` and a tiny quota, e.g. `SESSION_DAILY_LESSON_TURNS=1`
     — see `lib/quotas.js` for the env names) and point a debug build at it, or
     skip this step. Expected text when it does fire: "You've used today's
-    lesson turns. Mercurius will be ready again tomorrow." (or the chat /
-    image variants), shown plainly with no retry spinner.
+    lesson turns. Try again after 11:00 PM." (the server's "Lessons come
+    back tomorrow." swapped for the local time the allowance comes back; or
+    the chat / photo variants), shown plainly with no retry spinner.
 
 ### Settings, deletion and consent
 

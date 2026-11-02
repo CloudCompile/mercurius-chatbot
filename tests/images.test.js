@@ -14,6 +14,8 @@
 const { describe, test, before, after } = require('node:test');
 const assert = require('node:assert/strict');
 const { spawnServer } = require('./support/spawnServer');
+const fs = require('node:fs');
+const os = require('node:os');
 const path = require('node:path');
 const crypto = require('node:crypto');
 
@@ -146,15 +148,35 @@ async function getRaw(p) {
   };
 }
 
+// A database of its own. Without SQLITE_PATH the server opens the checkout's
+// mercurius.db, and a restart reads a network's day back from its ledger, so
+// every run's sessions from 127.0.0.1 piled up there until the network's
+// IP_DAILY_NEW_SESSIONS ran out and these uploads got 429s for the rest of
+// the day.
+const tempDbs = [];
+const tempDb = () => {
+  const p = path.join(os.tmpdir(), `merc-images-${crypto.randomBytes(4).toString('hex')}.db`);
+  tempDbs.push(p);
+  return p;
+};
+const removeTempDbs = () => {
+  for (const p of tempDbs) {
+    for (const suffix of ['', '-wal', '-shm']) {
+      try { fs.rmSync(p + suffix, { force: true }); } catch { /* ignore */ }
+    }
+  }
+};
+
 before(async () => {
   // Force the default DB-backed image store on ephemeral SQLite.
-  const server = spawnServer({ IMAGE_STORAGE_DRIVER: 'db' });
+  const server = spawnServer({ IMAGE_STORAGE_DRIVER: 'db', SQLITE_PATH: tempDb() });
   serverProc = server.proc;
   ({ base: BASE_URL } = await server.ready);
 });
 
 after(() => {
   if (serverProc) serverProc.kill('SIGTERM');
+  removeTempDbs();
 });
 
 describe('POST /api/images — success + retrieval round-trip', () => {
@@ -295,7 +317,7 @@ describe('image bodies are read only after the limiters', () => {
     let base;
     let proc;
     before(async () => {
-      const server = spawnServer({ IMAGE_STORAGE_DRIVER: 'db', UPLOAD_IP_PER_MIN: '3', IMAGE_UPLOAD_INFLIGHT_BYTES: '4096' });
+      const server = spawnServer({ IMAGE_STORAGE_DRIVER: 'db', SQLITE_PATH: tempDb(), UPLOAD_IP_PER_MIN: '3', IMAGE_UPLOAD_INFLIGHT_BYTES: '4096' });
       proc = server.proc;
       ({ base } = await server.ready);
     });

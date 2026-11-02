@@ -111,7 +111,7 @@ describe('refusals on the wire (AUD-30)', () => {
       assert.deepEqual(Object.keys(f).sort(), ['code', 'error', 'retryAfterSec', 'retryable', 'scope', 'type']);
       assert.equal(f.type, 'error');
       assert.equal(f.code, 'daily_limit');
-      assert.equal(f.error, "You've used today's chat turns. Mercurius will be ready again tomorrow.");
+      assert.equal(f.error, "You've used today's chat turns. Chat comes back tomorrow.");
       assert.equal(f.scope, 'session');
       assert.equal(f.retryable, false);
       assert.ok(Number.isInteger(f.retryAfterSec));
@@ -141,7 +141,7 @@ describe('refusals on the wire (AUD-30)', () => {
       assert.equal(f.code, 'daily_limit');
       assert.equal(f.scope, 'ip');
       assert.equal(f.retryable, true, 'another network gets past it');
-      assert.equal(f.error, 'Too many new sign-ups from this network today. Switch to cellular data, or try again tomorrow.');
+      assert.equal(f.error, "This network has reached today's limit for new devices. Switch to cellular data, or try again tomorrow.");
       near(f.retryAfterSec, expectedWait(), 'retryAfterSec');
 
       const j = await jsonCall(srv.base, newSession());

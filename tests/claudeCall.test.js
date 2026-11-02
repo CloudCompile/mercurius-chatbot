@@ -220,6 +220,26 @@ describe('claudeCall', () => {
     assert.notEqual(a, claudeCall.hashIp('203.0.113.9'), 'salt changes the hash');
   });
 
+  // The network's sign-up and report rows outlive an erasure, so they must
+  // not say when the erased session first appeared or filed its report: the
+  // day is all a restart's count needs.
+  test("recordNetworkEvent: the network's row carries the product day, not the moment", async (t) => {
+    const savedTz = process.env.STREAK_TZ;
+    process.env.STREAK_TZ = 'America/Chicago';
+    t.after(() => { if (savedTz === undefined) delete process.env.STREAK_TZ; else process.env.STREAK_TZ = savedTz; });
+    t.mock.timers.enable({ apis: ['Date'], now: Date.UTC(2026, 9, 29, 19, 42, 7, 315) }); // 2:42 PM CDT
+    claudeCall.recordNetworkEvent('session', { route: 'new-session', ip: '10.0.0.7' });
+    claudeCall.recordNetworkEvent('report', { route: '/api/report', ip: '10.0.0.7' });
+    claudeCall.recordNetworkEvent('report', { route: '/api/report', ip: null }); // no network, no row
+    await new Promise((r) => setImmediate(r));
+    const midnightCdt = Date.UTC(2026, 9, 29, 5, 0, 0);
+    // Before: ts was the moment, 2026-10-29T19:42:07.315Z.
+    assert.deepEqual(db.rows.map((r) => [r.kind, r.ts, r.session_id, r.ip_hash]), [
+      ['session', midnightCdt, null, claudeCall.hashIp('10.0.0.7')],
+      ['report', midnightCdt, null, claudeCall.hashIp('10.0.0.7')],
+    ]);
+  });
+
   test('a credit-balance error pages on its first occurrence (not after a 5-error burst)', async () => {
     const posts = [];
     alerts.configure({ webhookUrl: 'https://discord.invalid/hook', fetch: async (_url, init) => { posts.push(JSON.parse(init.body).content); return { ok: true }; } });
@@ -321,6 +341,14 @@ describe('claudeCall: only answered calls use a daily turn (AUD-31)', () => {
     assert.equal(turns().chatTurns, 0);
     assert.ok(sessionUsd() > 0, 'and they count toward the session dollar cap');
     assert.equal(quotas.check({ sessionId: 'r1', ip: IP, kind: 'chat' }).ok, true, 'the one turn is still there');
+  });
+
+  test("createMessage: the message says whether the call used the turn (a route that asks again reads it)", async () => {
+    const answered = await claudeCall.createMessage({ route: '/api/quiz', kind: 'helper', sessionId: 'q1', ip: IP, params: chatParams() });
+    const refused = await claudeCall.createMessage({ route: '/api/quiz', kind: 'helper', sessionId: 'q1', ip: IP, params: chatParams('MOCK_REFUSAL quiz me') });
+    const followUp = await claudeCall.createMessage({ route: '/api/quiz', kind: 'helper', sessionId: 'q1', ip: IP, followUp: true, params: chatParams() });
+    assert.deepEqual([answered, refused, followUp].map((m) => m.accounting().answered), [true, false, false]);
+    assert.ok(!Object.keys(answered).includes('accounting'), 'not part of the message body');
   });
 
   test('createMessage: an upstream error uses no turn', async () => {

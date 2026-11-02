@@ -153,6 +153,18 @@ automatically is a founder decision parked in PR #34 (AUD-53).
   get a new ID: before 2.3, Settings → Start Over (it gives a new ID but
   erases nothing on the server); in 2.3 and later, Settings → "Delete my
   data & start over".
+- **A network's sign-up and report counts.** Each new session and each
+  stored report also leaves a $0 `usage` row (kind `session` or `report`)
+  that holds only the network's scrambled address and the day: no session
+  ID, no text, and no time of day (the row is dated midnight in
+  `STREAK_TZ`). It is what keeps a school's daily
+  `IP_DAILY_NEW_SESSIONS` and `IP_DAILY_REPORTS` limits across a deploy,
+  so the erase leaves it (it is not tied to the session). The retention
+  sweep deletes it after 2 days (`NETWORK_COUNT_RETENTION_DAYS`). Until
+  then its row id, which goes up with every row written, still places it
+  between the exact times of the rows around it: someone reading the
+  database could tell roughly when the session started, or match the row
+  to a report's time in Discord.
 - **Database backups.** FOUNDER-TODO: check whether the Railway Postgres
   service keeps backups, and for how long. If it does, erased rows live on
   in them until they rotate, and the privacy page should say so.

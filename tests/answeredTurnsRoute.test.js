@@ -256,4 +256,47 @@ describe('only answered turns use the daily allowance (AUD-31)', () => {
       await srv.stop();
     }
   });
+
+  // The quiz's first ask can be refused or come back empty: it uses no turn,
+  // so the ask that does give the quiz is the one that counts. Every second
+  // ask used to be marked a follow-up, so such a quiz cost no turn at all.
+  test('a quiz whose first ask is refused uses its one turn on the ask that answers', async () => {
+    const dbPath = tmpDb();
+    dbs.push(dbPath);
+    const s = newSession();
+    const refuseFirst = path.join(__dirname, 'fixtures', 'refuseFirstQuizAsk.js');
+    const srv = await boot({ SQLITE_PATH: dbPath, SESSION_DAILY_CHAT_TURNS: '3', NODE_OPTIONS: `--require ${JSON.stringify(refuseFirst)}` });
+    try {
+      // Turns 1 and 2: something to quiz on.
+      const thread = [{ role: 'user', content: 'What is a large language model?' }];
+      const first = await sse(srv.base, s, thread);
+      assert.ok(completed(first.events), first.raw);
+      thread.push({ role: 'assistant', content: completed(first.events).reply }, { role: 'user', content: 'How does it pick the next token?' });
+      assert.ok(completed((await sse(srv.base, s, thread)).events));
+
+      // Turn 3 is the Quiz-me tap: refused, then answered.
+      const quiz = await fetch(`${srv.base}/api/quiz`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sessionId: s, messages: [] }),
+      });
+      const quizBody = await quiz.json();
+      assert.equal(quiz.status, 200, JSON.stringify(quizBody));
+      assert.ok(Array.isArray(quizBody.questions) && quizBody.questions.length > 0);
+
+      const rows = await waitFor(() => readUsage(dbPath, s), (r) => r.length >= 4);
+      // Before: the second ask was answered = 0 too.
+      assert.deepEqual(rows.map((r) => [r.kind, r.answered]), [
+        ['chat', 1], ['chat', 1],
+        ['helper', 0], ['helper', 1], // the refused ask, then the one that answered
+      ]);
+      assert.ok(rows.every((r) => r.cost_usd > 0), 'every call is billed');
+
+      // Before: answered, as if the quiz had been free.
+      const next = await sse(srv.base, s, [{ role: 'user', content: 'What is a token?' }]);
+      assert.equal(errorCode(next.events), 'daily_limit');
+    } finally {
+      await srv.stop();
+    }
+  });
 });

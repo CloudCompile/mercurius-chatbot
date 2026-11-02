@@ -453,6 +453,33 @@ await step('C5 usage ledger: recordUsage / sumCostSince (spend-cap hydrate) / se
   assertNum(sum.usd, 'usageSummarySince.usd');
   assert.ok(sum.byRoute.some((r) => r.route === '/api/chat' && r.calls >= 2 && isNum(r.usd)));
   assert.ok(sum.errors.some((e) => e.route === '/api/quiz' && e.error_kind === 'overloaded' && e.count === 1));
+  // A network's day, read back after a restart (quotas.hydrateIp): every
+  // row's cost by the hashed address, and its photo uploads (kind 'image',
+  // usage.bytes BIGINT). SUM comes back from pg as a string.
+  const N = `net_${crypto.randomBytes(4).toString('hex')}`;
+  assert.equal(await db.recordUsage({ ipHash: N, route: '/api/chat', kind: 'chat', costUsd: 0.003, status: 'ok' }), true);
+  assert.equal(await db.recordUsage({ ipHash: N, route: '/api/images', kind: 'image', costUsd: 0, status: 'ok', answered: true, bytes: 6000000000 }), true);
+  const netDay = await db.networkUsageSince(N, midnight);
+  assertNum(netDay.usd, 'networkUsageSince.usd');
+  assertNum(netDay.images, 'networkUsageSince.images');
+  assertNum(netDay.imageBytes, 'networkUsageSince.imageBytes');
+  assert.ok(Math.abs(netDay.usd - 0.003) < 1e-9);
+  assert.deepEqual([netDay.images, netDay.imageBytes], [1, 6000000000], 'bytes past 32 bits');
+  // A network's new sessions and reports: $0 rows with no session id.
+  assert.equal(await db.recordUsage({ ipHash: N, route: 'new-session', kind: 'session', costUsd: 0, status: 'ok', answered: false }), true);
+  assert.equal(await db.recordUsage({ ipHash: N, route: '/api/report', kind: 'report', costUsd: 0, status: 'ok', answered: false }), true);
+  const marked = await db.networkUsageSince(N, midnight);
+  assertNum(marked.newSessions, 'networkUsageSince.newSessions');
+  assertNum(marked.reports, 'networkUsageSince.reports');
+  assert.deepEqual([marked.newSessions, marked.reports, marked.images], [1, 1, 1]);
+  // A session's stored reports today (the reports table).
+  const R = newSid('rep');
+  await db.getOrCreateSession(R);
+  await db.saveReport({ sessionId: R, content: 'smoke', createdAt: Date.now() });
+  const reportsToday = await db.sessionReportsSince(R, midnight);
+  assertNum(reportsToday, 'sessionReportsSince');
+  assert.equal(reportsToday, 1);
+  await db.deleteSession(R);
 });
 
 await step('C6 settings: getSetting / setSetting upsert', async () => {
@@ -679,6 +706,11 @@ await step('C15 retention purges (batched past 1000 rows) + inactiveSessionIds',
   assertNum(m, 'purgeMessagesBefore');
   assert.equal(m, 1205, 'two batches (1000 + 205)');
   assert.equal(await count('messages'), recentBefore, 'recent messages untouched');
+  // A network's sign-up and report rows go on their own 2-day window.
+  await insertMany('usage', ['ts', 'ip_hash', 'route', 'kind', 'status'], [[2000, 'net_old', 'new-session', 'session', 'ok'], [2001, 'net_old', '/api/report', 'report', 'ok']]);
+  const nc = await db.purgeNetworkCountsBefore(10000);
+  assertNum(nc, 'purgeNetworkCountsBefore');
+  assert.equal(nc, 2, 'only kinds session / report');
   assert.equal(await db.purgeUsageBefore(10000), 3);
   assert.equal(await db.purgeLessonEventsBefore(10000), 4);
   assert.equal(await db.purgeReportsBefore(10000), 1, 'resolved only by default');

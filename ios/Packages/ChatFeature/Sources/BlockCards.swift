@@ -150,6 +150,19 @@ struct CheckQuizCard: View {
         return BrandColor.accentText
     }
 
+    /// ✓ on the answer, ✗ on a wrong pick. Every row lays out its mark from
+    /// the start and only fades it in on grading: inserting it then narrowed
+    /// the option text, which rewrapped mid-animation with overlapping glyphs
+    /// while the lesson auto-scrolled. VoiceOver gets the grade from
+    /// `optionAccessibility`.
+    private func gradeMark(isAnswer: Bool, isPick: Bool) -> some View {
+        Image(systemName: isAnswer ? "checkmark.circle.fill" : "xmark.circle.fill")
+            .font(.caption)
+            .foregroundStyle(isAnswer ? BrandColor.successText : BrandColor.errorText)
+            .opacity(graded && (isAnswer || isPick) ? 1 : 0)
+            .accessibilityHidden(true)
+    }
+
     private func optionRow(index: Int, option: String) -> some View {
         let isPick = effectivePick == index
         let isAnswer = quiz.answerIndex == index
@@ -182,15 +195,7 @@ struct CheckQuizCard: View {
                     .multilineTextAlignment(.leading)
                     .fixedSize(horizontal: false, vertical: true)
                 Spacer(minLength: 0)
-                if graded && isAnswer {
-                    Image(systemName: "checkmark.circle.fill")
-                        .font(.caption)
-                        .foregroundStyle(BrandColor.successText)
-                } else if graded && isPick {
-                    Image(systemName: "xmark.circle.fill")
-                        .font(.caption)
-                        .foregroundStyle(BrandColor.errorText)
-                }
+                gradeMark(isAnswer: isAnswer, isPick: isPick)
             }
             .padding(.vertical, 10)
             .padding(.horizontal, BrandSpacing.sm)

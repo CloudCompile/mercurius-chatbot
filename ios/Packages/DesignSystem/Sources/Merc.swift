@@ -172,9 +172,10 @@ private struct MercArt: View {
             // Neck
             limb(lin(160, 0x5F33D6, 0x8A35D4)).placed(x: 73, y: 80, w: 14, h: 18)
 
-            // Head + helmet
-            helmetDome().placed(x: 55, y: 17, w: 50, h: 34)
+            // Head + helmet: the dome sits ON the head (Merc.dc.html draws
+            // it after the head), and the brim covers its lower edge.
             head().placed(x: 52, y: 26, w: 56, h: 62)
+            helmetDome().placed(x: 55, y: 17, w: 50, h: 34)
             RoundedRectangle(cornerRadius: 6, style: .continuous)
                 .fill(LinearGradient(colors: [.white, Color(hex: 0xE7E3FF)], startPoint: .top, endPoint: .bottom))
                 .placed(x: 46, y: 45, w: 68, h: 10, rotation: -4)
@@ -334,9 +335,9 @@ private struct MercArt: View {
                 endPoint: UnitPoint(x: 0.5 + dx / 2, y: 0.5 + dy / 2)))
     }
     private func helmetDome() -> some View {
-        let shape = UnevenRoundedRectangle(topLeadingRadius: 17, bottomLeadingRadius: 13,
-                                           bottomTrailingRadius: 13, topTrailingRadius: 17,
-                                           style: .continuous)
+        // `border-radius: 52% 52% 38% 38%`: elliptical corners, so the top
+        // is one rounded dome rather than a box with rounded corners.
+        let shape = EllipticalCornerRect(top: 0.52, bottom: 0.38)
         return shape
             .fill(lin(150, 0x5A23C9, 0x8D2FD6))
             .overlay(
@@ -464,6 +465,44 @@ struct SparkleStar: Shape {
             let cp = CGPoint(x: r.minX + pt.0 * r.width, y: r.minY + pt.1 * r.height)
             if i == 0 { p.move(to: cp) } else { p.addLine(to: cp) }
         }
+        p.closeSubpath()
+        return p
+    }
+}
+
+/// A rectangle with elliptical corners, as CSS draws `border-radius: T% T% B% B%`:
+/// each corner's horizontal radius is a fraction of the width and its vertical
+/// radius the same fraction of the height. Where two radii along one side add
+/// up to more than the side, all radii shrink by the same factor (the CSS rule).
+struct EllipticalCornerRect: Shape {
+    var top: CGFloat
+    var bottom: CGFloat
+
+    func path(in r: CGRect) -> Path {
+        let w = r.width, h = r.height
+        let f = min(1, 1 / (2 * top), 1 / (2 * bottom), 1 / (top + bottom))
+        let tx = top * w * f, ty = top * h * f
+        let bx = bottom * w * f, by = bottom * h * f
+        let k: CGFloat = 0.5523   // cubic Bézier control length for a quarter ellipse
+
+        var p = Path()
+        p.move(to: CGPoint(x: r.minX + tx, y: r.minY))
+        p.addLine(to: CGPoint(x: r.maxX - tx, y: r.minY))
+        p.addCurve(to: CGPoint(x: r.maxX, y: r.minY + ty),
+                   control1: CGPoint(x: r.maxX - tx + k * tx, y: r.minY),
+                   control2: CGPoint(x: r.maxX, y: r.minY + ty - k * ty))
+        p.addLine(to: CGPoint(x: r.maxX, y: r.maxY - by))
+        p.addCurve(to: CGPoint(x: r.maxX - bx, y: r.maxY),
+                   control1: CGPoint(x: r.maxX, y: r.maxY - by + k * by),
+                   control2: CGPoint(x: r.maxX - bx + k * bx, y: r.maxY))
+        p.addLine(to: CGPoint(x: r.minX + bx, y: r.maxY))
+        p.addCurve(to: CGPoint(x: r.minX, y: r.maxY - by),
+                   control1: CGPoint(x: r.minX + bx - k * bx, y: r.maxY),
+                   control2: CGPoint(x: r.minX, y: r.maxY - by + k * by))
+        p.addLine(to: CGPoint(x: r.minX, y: r.minY + ty))
+        p.addCurve(to: CGPoint(x: r.minX + tx, y: r.minY),
+                   control1: CGPoint(x: r.minX, y: r.minY + ty - k * ty),
+                   control2: CGPoint(x: r.minX + tx - k * tx, y: r.minY))
         p.closeSubpath()
         return p
     }

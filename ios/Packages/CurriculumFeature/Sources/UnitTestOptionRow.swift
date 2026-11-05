@@ -74,11 +74,21 @@ struct UnitTestOptionRow: View {
                     .multilineTextAlignment(.leading)
                     .fixedSize(horizontal: false, vertical: true)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                if let mark {
-                    Image(systemName: mark.symbol)
-                        .font(BrandFont.body)
-                        .foregroundStyle(mark.color)
-                }
+                // Every row keeps the mark's slot from the start and the mark
+                // appears in it once graded: inserting it then narrowed the
+                // option text, which rewrapped on submit. VoiceOver gets the
+                // grade from `accessibilityValue`.
+                Image(systemName: "checkmark.circle.fill")
+                    .font(BrandFont.body)
+                    .hidden()
+                    .overlay {
+                        if let mark {
+                            Image(systemName: mark.symbol)
+                                .font(BrandFont.body)
+                                .foregroundStyle(mark.color)
+                        }
+                    }
+                    .accessibilityHidden(true)
             }
             .padding(.vertical, BrandSpacing.sm)
             .padding(.horizontal, BrandSpacing.md)

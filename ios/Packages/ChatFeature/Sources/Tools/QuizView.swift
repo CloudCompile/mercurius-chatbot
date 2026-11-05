@@ -191,19 +191,26 @@ public struct QuizView: View {
                     .font(BrandFont.body)
                     .foregroundStyle(BrandColor.text)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                if submitted {
-                    Image(systemName:
-                        isUserCorrect ? "checkmark.circle.fill" :
-                            (isCorrectOption ? "checkmark.circle" :
-                                (isUserWrong ? "xmark.circle.fill" : "circle"))
-                    )
-                    .foregroundStyle(
-                        isUserCorrect ? BrandColor.successText :
-                            (isCorrectOption ? BrandColor.successText :
-                                (isUserWrong ? BrandColor.errorText : BrandColor.textSecondary))
-                    )
+                // The mark's slot is kept from the start and the mark appears
+                // in it on submit: inserting it then narrowed the option
+                // text, which rewrapped.
+                Image(systemName: "checkmark.circle.fill")
+                    .hidden()
+                    .overlay {
+                        if submitted {
+                            Image(systemName:
+                                isUserCorrect ? "checkmark.circle.fill" :
+                                    (isCorrectOption ? "checkmark.circle" :
+                                        (isUserWrong ? "xmark.circle.fill" : "circle"))
+                            )
+                            .foregroundStyle(
+                                isUserCorrect ? BrandColor.successText :
+                                    (isCorrectOption ? BrandColor.successText :
+                                        (isUserWrong ? BrandColor.errorText : BrandColor.textSecondary))
+                            )
+                        }
+                    }
                     .accessibilityHidden(true)
-                }
             }
             .padding(.vertical, BrandSpacing.sm)
             .padding(.horizontal, BrandSpacing.md)

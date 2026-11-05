@@ -76,20 +76,31 @@ public struct NightAnswerRow: View {
         .allowsHitTesting(isInteractive)
     }
 
-    @ViewBuilder private var trailingMark: some View {
+    /// Every row keeps the mark's slot from the start and the mark appears in
+    /// it once graded: inserting the mark then narrowed the option text,
+    /// which rewrapped with overlapping glyphs while the graded check
+    /// scrolled to its top. The mark is its own view over a hidden
+    /// placeholder, so grading fades in the right symbol (one view swapping
+    /// symbols would show the placeholder's ✓ until the animation ends).
+    private var trailingMark: some View {
+        Image(systemName: "checkmark.circle.fill")
+            .font(.system(size: 16, weight: .semibold))
+            .hidden()
+            .overlay {
+                if let gradeMark {
+                    Image(systemName: gradeMark.symbol)
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundStyle(gradeMark.color)
+                }
+            }
+            .accessibilityHidden(true)
+    }
+
+    private var gradeMark: (symbol: String, color: Color)? {
         switch mark {
-        case .correct(let picked):
-            Image(systemName: picked ? "checkmark.circle.fill" : "checkmark.circle")
-                .font(.system(size: 16, weight: .semibold))
-                .foregroundStyle(Night.successText)
-                .accessibilityHidden(true)
-        case .wrong:
-            Image(systemName: "xmark.circle.fill")
-                .font(.system(size: 16, weight: .semibold))
-                .foregroundStyle(Night.errorText)
-                .accessibilityHidden(true)
-        default:
-            EmptyView()
+        case .correct(let picked): return (picked ? "checkmark.circle.fill" : "checkmark.circle", Night.successText)
+        case .wrong: return ("xmark.circle.fill", Night.errorText)
+        default: return nil
         }
     }
 

@@ -121,8 +121,11 @@ Spec: `docs/marketing-demo.md`.
   `.shots/` at the repo root (gitignored), cropped to `#demo`. Compare with
   the app's shots in `docs/ios-tokenizer/key-shots/`.
 - **Changing it:** change the app first (the words go through the app's
-  content review: CONTENT.md), then re-run `build-tokenizer.mjs` and both
-  checks. Don't reword the card on the page by hand. The section's intro is
+  content review: CONTENT.md). Once the app version with the new words is
+  live on the App Store, re-run `build-tokenizer.mjs` and both checks, so
+  the page never shows words students can't see yet. Nothing runs the
+  generator's `--check` in CI: re-run it after each app release that
+  touches `TokenizerInteractive.swift`. Don't reword the card on the page by hand. The section's intro is
   ordinary page copy.
 
 ## Reels (homepage `#reels` and `/ads`)
@@ -283,15 +286,15 @@ width, so paragraphs keep their line count when Inter swaps in.
 - Skip link at the very top.
 - Semantic landmarks (`<header>`, `<main>`, `<footer>`, `<nav>`).
 - Heading hierarchy: one `<h1>` (hero), `<h2>` per section, `<h3>`
-  inside cards.
+  inside cards (the "Try it" card's four steps are `<h4>`).
 - Mode tabs follow the WAI-ARIA tabs pattern (`script.js`): the
   selected tab is the tablist's only Tab stop (roving tabindex), Left/Right
   move between tabs and wrap, Home/End jump to the first/last, and the
   shown panel is the next Tab stop, its ring drawn on the card's edge.
 - All decorative images have `alt=""` + `aria-hidden`. The brand
   mark has the meaningful label on the wrapping link.
-- Focus: a 3px periwinkle ring on everything focusable (the darker accent
-  inside Merc's white bubble).
+- Focus: a 3px periwinkle ring on everything focusable, including inside
+  the "Try it" card.
 - `prefers-reduced-motion` turns off Merc's idle motion, the hero bubbles'
   entrance and smooth scroll, and makes "bank" fade instead of travel in
   the "Try it" interactive. Without it, every hero animation runs once and ends within 5
@@ -309,9 +312,10 @@ width, so paragraphs keep their line count when Inter swaps in.
   and the small one is a corner arc; from 1024px both sit in the margins
   beside the container (page heroes: the top-right corner, clear of the
   headline and lede).
-- "Try it" interactive: the openings are real toggle buttons
-  (`aria-pressed`, Enter/Space, at least 44px tall), named and hinted as in
-  the app; each step's picture is one labelled image (the app's VoiceOver
+- "Try it" interactive: the openings are a radio group of real buttons
+  named by the visible "Start the sentence:" (arrows move and pick, Space
+  picks, one Tab stop, at least 44px tall), with the app's hint, marked
+  disabled until the script runs; each step's picture is one labelled image (the app's VoiceOver
   lines, from CONTENT.md); the map's label says where "bank" is; a pick is
   announced in a polite live region; "Try it" moves focus to step 4's
   heading.

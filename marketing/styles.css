@@ -1863,6 +1863,7 @@ strong { color: var(--ink); font-weight: 600; }
   color: var(--tok-accent-text);
 }
 .tok-dot { color: var(--tok-ink3); }
+.tok-nobr { white-space: nowrap; }
 .tok-chip--lit {
   background: linear-gradient(to right, #4338CA, #5B32D6);
   box-shadow: none;
@@ -1988,7 +1989,9 @@ strong { color: var(--ink); font-weight: 600; }
   transition: background-color 0.2s ease-out, box-shadow 0.2s ease-out, color 0.2s ease-out;
 }
 .tok-open:hover { background-color: #20265C; }
-.tok-open[aria-pressed="true"] {
+.tok-open[aria-disabled="true"] { cursor: default; }
+.tok-open[aria-disabled="true"]:hover { background-color: var(--tok-raised); }
+.tok-open[aria-checked="true"] {
   background-color: var(--tok-prominent);
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0);
   color: #FFFFFF;
@@ -2000,8 +2003,8 @@ strong { color: var(--ink); font-weight: 600; }
 .tok-ring-on { opacity: 0; transition: opacity 0.2s ease-out; }
 .tok-ring-on circle { fill: #FFFFFF; }
 .tok-ring-on path { fill: none; stroke: var(--tok-prominent); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
-.tok-open[aria-pressed="true"] .tok-ring-on { opacity: 1; }
-.tok-open[aria-pressed="true"] .tok-ring-off { opacity: 0; }
+.tok-open[aria-checked="true"] .tok-ring-on { opacity: 1; }
+.tok-open[aria-checked="true"] .tok-ring-off { opacity: 0; }
 
 /* Every version of the sentence is laid out at once and one is shown, so
    a pick never changes the step's height: only "bank" moves. */
@@ -2025,7 +2028,7 @@ strong { color: var(--ink); font-weight: 600; }
   height: 200px;
   border-radius: 16px;
   overflow: hidden;
-  background: #070923;
+  background: linear-gradient(#0D1035, #070923);
 }
 .tok-map::after {
   content: "";
@@ -2049,7 +2052,6 @@ strong { color: var(--ink); font-weight: 600; }
 .tok-map-word { font-family: var(--tok-mono); font-size: 13px; font-weight: 500; }
 .tok-map-pill { font-family: var(--tok-mono); font-size: 14px; font-weight: 500; }
 .tok-map-caption { font-family: var(--font-body); font-size: 12px; }
-.tok-map-glowline { filter: drop-shadow(0 0 4px rgba(158, 164, 255, 0.8)); }
 
 .tok-how { font-size: 16px; line-height: 21px; color: var(--tok-ink2); }
 
@@ -2071,11 +2073,11 @@ strong { color: var(--ink); font-weight: 600; }
   .tok-try, .tok-well, .tok-open { box-shadow: inset 0 0 0 1px var(--tok-hairline); }
   .tok-disc, .tok-chip { box-shadow: inset 0 0 0 1px var(--tok-accent-text); }
   .tok-typed { box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.6); }
-  .tok-chip--lit, .tok-open[aria-pressed="true"] { box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.9); }
+  .tok-chip--lit, .tok-open[aria-checked="true"] { box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.9); }
   .tok-plot::before { background: #C3C8EA; }
   .tok-bar { background: #C7D2FE; }
+  .tok-map { background: #05071A; }
   .tok-map::after { box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.55); }
-  .tok-map-glowline { filter: none; }
 }
 
 /* Reduce Transparency: every wash solid, no corner light, no stars. */
@@ -2089,7 +2091,14 @@ strong { color: var(--ink); font-weight: 600; }
     background: var(--tok-surface);
   }
   .tok-stars { display: none; }
-  .tok-map-glowline { filter: none; }
+}
+
+/* Browsers without container queries: the narrow layouts (the map's height
+   comes from tokenizer.js there). */
+@supports not (container-type: inline-size) {
+  .tok-strip { flex-direction: column; align-items: flex-start; }
+  .tok-arrow { transform: rotate(90deg); }
+  .tok-cell[data-i="5"], .tok-cell[data-i="6"], .tok-cell[data-i="7"], .tok-cell[data-i="8"] { display: none; }
 }
 
 @media (max-width: 559px) {
@@ -2102,7 +2111,8 @@ strong { color: var(--ink); font-weight: 600; }
 
 @media (min-width: 1024px) {
   .tok-grid {
-    grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr);
+    /* The card's own width on the right, so its edge meets the content edge. */
+    grid-template-columns: minmax(0, 1fr) minmax(0, 560px);
     gap: var(--space-8);
     align-items: start;
   }
@@ -2124,7 +2134,11 @@ strong { color: var(--ink); font-weight: 600; }
   /* The card's edges are inset shadows, which forced colours drop: draw
      borders instead. The map is a picture: keep its own colours. */
   .tok, .tok-try, .tok-disc, .tok-chip, .tok-well, .tok-open, .tok-typed { border: 1px solid CanvasText; }
-  .tok-open[aria-pressed="true"] { border: 3px solid Highlight; }
+  /* The picked opening is filled (same box size), so the focus ring stays the only ring. */
+  .tok-open[aria-checked="true"] { forced-color-adjust: none; background: SelectedItem; color: SelectedItemText; border-color: SelectedItemText; }
+  .tok-open[aria-checked="true"] .tok-ring-on circle { fill: SelectedItemText; }
+  .tok-open[aria-checked="true"] .tok-ring-on path { stroke: SelectedItem; }
+  .tok-ring-off { stroke: ButtonText; }
   .tok-map, .tok-bar, .tok-plot::before { forced-color-adjust: none; }
 }
 
@@ -2138,6 +2152,9 @@ strong { color: var(--ink); font-weight: 600; }
   }
   .merc-svg, .merc-svg g, .chat .bubble, .hero-art .speaker-tag,
   .mode-panel, .intent-panel { animation: none !important; }
+  /* As the app: under Reduce Motion an opening's colour still fades (0.2s);
+     only "bank" stops travelling. */
+  .tok-open, .tok-ring-off, .tok-ring-on { transition-duration: 0.2s !important; }
 }
 
 @media print {

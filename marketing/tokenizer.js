@@ -98,10 +98,10 @@
     });
     DATA.words.forEach(function (word) {
       var f = lit[word.group];
-      out['dot-' + word.text] = {
-        r: round(3 + 1.5 * f),
-        style: c.glows ? 'filter: drop-shadow(0 0 ' + round(6 + 6 * f) + 'px rgba(255, 255, 255, ' + round(0.4 + 0.5 * f) + '))' : ''
-      };
+      out['dot-' + word.text] = { r: round(3 + 1.5 * f) };
+      // The app's dot shadow (white 0.4 at radius 3, 0.9 at 6 once lit), drawn
+      // as a soft circle: WebKit paints no CSS filter on SVG shapes.
+      out['dotglow-' + word.text] = { r: round(9 + 7.5 * f), opacity: round(mix(0.4, 0.9, f)) };
       out['label-' + word.text] = mode.hc || mode.rt
         ? { fill: lerpHex('#DDE0F7', '#FFFFFF', f), 'fill-opacity': 1 }
         : { fill: '#FFFFFF', 'fill-opacity': round(mix(0.74, 1, f)) };
@@ -156,6 +156,12 @@
       s.push('<radialGradient id="' + id('glow-' + g) + '"><stop offset="0" stop-color="' + HUE[g] + '"/>'
         + '<stop offset="1" stop-color="' + HUE[g] + '" stop-opacity="0"/></radialGradient>');
     });
+    s.push('<radialGradient id="' + id('dotglow') + '"><stop offset="0" stop-color="#FFFFFF"/>'
+      + '<stop offset="0.35" stop-color="#FFFFFF" stop-opacity="0.55"/><stop offset="1" stop-color="#FFFFFF" stop-opacity="0"/></radialGradient>');
+    // "bank"'s links glow lumen 0.8 (the app's shadow radius 4): an SVG filter,
+    // which WebKit paints, over the whole map (a level line has no height).
+    s.push('<filter id="' + id('linkglow') + '" filterUnits="userSpaceOnUse" x="0" y="0" width="' + size.w + '" height="' + size.h + '">'
+      + '<feDropShadow dx="0" dy="0" stdDeviation="2" flood-color="#9EA4FF" flood-opacity="0.8"/></filter>');
     s.push('<radialGradient id="' + id('bankglow') + '"><stop offset="0" stop-color="#C7CBFF" stop-opacity="0.75"/>'
       + '<stop offset="1" stop-color="#C7CBFF" stop-opacity="0"/></radialGradient>');
     s.push('<linearGradient id="' + id('pill') + '" x1="0" y1="0" x2="1" y2="0">'
@@ -201,7 +207,7 @@
       s.push('<line' + role('trail-' + i) + ' x2="' + round(st0[0]) + '" y2="' + round(st0[1]) + '" stroke="' + c.link
         + '" stroke-width="1.2" stroke-linecap="round" stroke-dasharray="2 4"/>');
       DATA.contexts.forEach(function (g) {
-        s.push('<g' + role('links-' + g + '-' + i) + (c.glows ? ' class="tok-map-glowline"' : '') + '>');
+        s.push('<g' + role('links-' + g + '-' + i) + (c.glows ? ' filter="url(#' + id('linkglow') + ')"' : '') + '>');
         DATA.words.filter(function (w) { return w.group === g; }).forEach(function (w) {
           var p = at(w.point, size);
           s.push('<line' + role('link-' + w.text + '-' + i) + ' x2="' + round(p[0]) + '" y2="' + round(p[1])
@@ -221,6 +227,9 @@
       if (w.side === 'above') y = p[1] - gap - half;
       if (w.side === 'leading') { x = p[0] - gap; anchor = 'end'; }
       if (w.side === 'trailing') { x = p[0] + gap; anchor = 'start'; }
+      if (c.glows) {
+        s.push('<circle' + role('dotglow-' + w.text) + ' cx="' + round(p[0]) + '" cy="' + round(p[1]) + '" fill="url(#' + id('dotglow') + ')"/>');
+      }
       s.push('<circle' + role('dot-' + w.text) + ' cx="' + round(p[0]) + '" cy="' + round(p[1]) + '" fill="#FFFFFF"/>');
       s.push('<text class="tok-map-word"' + role('label-' + w.text) + ' x="' + round(x) + '" y="' + round(y)
         + '" text-anchor="' + anchor + '" dominant-baseline="central">' + esc(w.text) + '</text>');
@@ -276,7 +285,9 @@
 
     var ctx = null;
     var size = null;
+    var drawnMode = null;
     var byRole = {};
+    var liveTimer = 0;
     // copies[0] is "bank" now; copies[1] fades out from where it was (Reduce Motion only)
     var copies = [];
     var lit = { money: 0, river: 0 };
@@ -288,10 +299,14 @@
       if (!panelW) return;
       cancelAnimationFrame(frame);
       size = mapSize(panelW);
+      drawnMode = mode();
+      // The box's height follows the drawing (CSS sets the same height where
+      // container queries work; this keeps older browsers from letterboxing).
+      mapBox.style.height = round(size.h * Math.min(1, panelW / size.w)) + 'px';
       var settled = targetState(ctx, size);
       copies = [{ state: settled, opacity: 1 }, { state: settled, opacity: 0 }];
       lit = { money: settled.money, river: settled.river };
-      mapBox.innerHTML = mapMarkup(panelW, copies, lit, mode(), 'live');
+      mapBox.innerHTML = mapMarkup(panelW, copies, lit, drawnMode, 'live');
       byRole = {};
       Array.prototype.forEach.call(mapBox.querySelectorAll('[data-role]'), function (el) {
         byRole[el.getAttribute('data-role')] = el;
@@ -299,7 +314,7 @@
     }
 
     function apply() {
-      var attrs = dynamicAttrs(size, copies, lit, mode());
+      var attrs = dynamicAttrs(size, copies, lit, drawnMode);
       Object.keys(attrs).forEach(function (name) {
         var el = byRole[name];
         if (!el) return;
@@ -321,6 +336,8 @@
       var from = snapshot();
       var fromLit = { money: lit.money, river: lit.river };
       var toLit = { money: to.money, river: to.river };
+      // If a Reduce Motion crossfade was under way, finish its fades on this curve.
+      var op0 = copies[0].opacity, op1 = copies[1].opacity;
       var t0 = null;
       cancelAnimationFrame(frame);
       var step = function (now) {
@@ -330,6 +347,8 @@
         var s = {};
         Object.keys(to).forEach(function (k) { s[k] = mix(from[k], to[k], p); });
         copies[0].state = s;
+        copies[0].opacity = mix(op0, 1, p);
+        copies[1].opacity = mix(op1, 0, p);
         lit = { money: mix(fromLit.money, toLit.money, p), river: mix(fromLit.river, toLit.river, p) };
         apply();
         if (p < 1) frame = requestAnimationFrame(step);
@@ -341,7 +360,9 @@
       // Reduce Motion: nothing travels. The old "bank" fades out where it
       // was while the new one fades in where it lands.
       var fromLit = { money: lit.money, river: lit.river };
-      copies[1] = { state: snapshot(), opacity: 1 };
+      // The outgoing "bank" fades from wherever it is (a pick mid-fade doesn't pop).
+      var outFrom = copies[0].opacity;
+      copies[1] = { state: snapshot(), opacity: outFrom };
       copies[0] = { state: to, opacity: 0 };
       var t0 = null;
       cancelAnimationFrame(frame);
@@ -350,7 +371,7 @@
         var t = Math.min(1, (now - t0) / 1000 / FADE);
         var e = t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
         copies[0].opacity = e;
-        copies[1].opacity = 1 - e;
+        copies[1].opacity = outFrom * (1 - e);
         lit = { money: mix(fromLit.money, to.money, e), river: mix(fromLit.river, to.river, e) };
         apply();
         if (t < 1) frame = requestAnimationFrame(step);
@@ -362,7 +383,9 @@
       if (next === ctx || !DATA.openings[next]) return;
       ctx = next;
       chips.forEach(function (chip) {
-        chip.setAttribute('aria-pressed', chip.getAttribute('data-tok-open') === ctx ? 'true' : 'false');
+        var on = chip.getAttribute('data-tok-open') === ctx;
+        chip.setAttribute('aria-checked', on ? 'true' : 'false');
+        chip.tabIndex = on ? 0 : -1;
       });
       sentences.forEach(function (line) {
         var shown = line.getAttribute('data-tok-sentence') === ctx;
@@ -378,14 +401,31 @@
         glide(targetState(ctx, size));
       }
       if (!quiet && live) {
+        // Said once, then cleared, so reading on doesn't meet it a second time.
         var said = card.getAttribute('data-tok-said-' + ctx);
+        clearTimeout(liveTimer);
         live.textContent = '';
-        setTimeout(function () { live.textContent = said; }, 60);
+        liveTimer = setTimeout(function () {
+          live.textContent = said;
+          liveTimer = setTimeout(function () { live.textContent = ''; }, 5000);
+        }, 60);
       }
     }
 
-    chips.forEach(function (chip) {
+    // The openings are a radio group: one Tab stop (the picked one, else the
+    // first), arrows move and pick, Space or a click picks.
+    chips.forEach(function (chip, i) {
+      chip.removeAttribute('aria-disabled');
+      chip.tabIndex = i === 0 ? 0 : -1;
       chip.addEventListener('click', function () { pick(chip.getAttribute('data-tok-open')); });
+      chip.addEventListener('keydown', function (event) {
+        var step = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 }[event.key];
+        if (!step) return;
+        event.preventDefault();
+        var next = chips[(i + step + chips.length) % chips.length];
+        next.focus();
+        pick(next.getAttribute('data-tok-open'));
+      });
     });
 
     if (tryIt && step4) {

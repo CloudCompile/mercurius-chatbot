@@ -121,6 +121,7 @@ async function load({ scripts = true, width = 1280, height = 900, reduceMotion =
 
 const KEYS = {
   Tab: { code: 'Tab', vk: 9 },
+  ArrowRight: { code: 'ArrowRight', vk: 39 },
   Enter: { code: 'Enter', vk: 13, text: '\r' },
   ' ': { code: 'Space', vk: 32, text: ' ' },
 };
@@ -152,7 +153,11 @@ const probe = () => js(`(() => {
   const r = (el) => el.getBoundingClientRect();
   return {
     enhanced: card.classList.contains('is-enhanced'),
-    pressed: [...card.querySelectorAll('[data-tok-open]')].map((b) => b.getAttribute('aria-pressed')),
+    pressed: [...card.querySelectorAll('[data-tok-open]')].map((b) => b.getAttribute('aria-checked')),
+    tabStops: [...card.querySelectorAll('[data-tok-open]')].map((b) => b.tabIndex),
+    dotGlows: map.querySelectorAll('[data-role^="dotglow-"]').length,
+    linkFilters: [...map.querySelectorAll('[data-role^="links-"]')].map((g) => g.getAttribute('filter')),
+    cssFilters: [...map.querySelectorAll('[style]')].filter((el) => /filter/.test(el.getAttribute('style'))).length,
     shown: [...card.querySelectorAll('[data-tok-sentence]')].filter((s) => getComputedStyle(s).visibility === 'visible').map((s) => s.getAttribute('data-tok-sentence')),
     sentenceHidden: [...card.querySelectorAll('[data-tok-sentence]')].map((s) => s.getAttribute('aria-hidden')),
     mapLabel: map.getAttribute('aria-label'),
@@ -166,7 +171,7 @@ const probe = () => js(`(() => {
     links: [num(role('links-money-0'), 'opacity'), num(role('links-river-0'), 'opacity')],
     ghost: num(role('mark-1'), 'opacity'),
     now: num(role('mark-0'), 'opacity'),
-    glows: map.querySelectorAll('[data-role^="glow-"], [data-role^="bankglow"]').length,
+    glows: map.querySelectorAll('[data-role*="glow"], [filter]').length,
     step4Height: Math.round(r(step4).height * 100) / 100,
     mapTop: Math.round((r(map).top - r(step4).top) * 100) / 100,
     active: document.activeElement && (document.activeElement.closest('[data-tok-step4]') && document.activeElement.tagName),
@@ -254,6 +259,7 @@ async function main() {
         stillSvg: !!card.querySelector('.tok-map-still svg [data-role="bankdot-0"]'),
         sentence: [...card.querySelectorAll('[data-tok-sentence]')].filter((s) => getComputedStyle(s).visibility === 'visible').map((s) => s.textContent),
         chips: [...card.querySelectorAll('[data-tok-open]')].map((b) => b.textContent.trim()),
+        disabled: [...card.querySelectorAll('[data-tok-open]')].map((b) => b.getAttribute('aria-disabled')),
         script: [...document.scripts].filter((s) => /\\/tokenizer\\.js\\?v=/.test(s.src)).map((s) => s.defer),
       };
     })()`);
@@ -268,6 +274,7 @@ async function main() {
     check(`${width}px no JS: one map drawn, in its first state`, p.stills === 1 && p.stillSvg, JSON.stringify(p));
     eq(`${width}px no JS: the sentence before a pick`, p.sentence, [`… ${SENTENCE}`]);
     eq(`${width}px no JS: both openings shown`, p.chips, [`${OPENING.money}…`, `${OPENING.river}…`]);
+    eq(`${width}px no JS: the openings are marked disabled`, p.disabled, ['true', 'true']);
     eq(`${width}px no JS: tokenizer.js loads deferred`, p.script, [true]);
     if (width === 360) {
       const o = await overflow();
@@ -289,11 +296,20 @@ async function main() {
   eq('no trail or links before a pick', [p.trail, p.links], [0, [0, 0]]);
   const live = await js(`(() => { const l = document.querySelector('[data-tok-live]'); return [l.getAttribute('role'), l.getAttribute('aria-live')]; })()`);
   eq('the live region is a polite status', live, ['status', 'polite']);
-  const names = await js(`[...document.querySelectorAll('[data-tok-open]')].map((b) => [b.getAttribute('aria-label'), document.getElementById(b.getAttribute('aria-describedby')).textContent])`);
-  eq('the openings\' names and hint (CONTENT.md)', names, [
-    [`Start the sentence: ${OPENING.money}`, 'Moves bank on the map of meaning'],
-    [`Start the sentence: ${OPENING.river}`, 'Moves bank on the map of meaning']]);
-  check('the "money" opening\'s name is CONTENT.md\'s chip line', CONTENT.includes(names[0][0]));
+  const group = await js(`(() => {
+    const g = document.querySelector('.tok-openings');
+    return [g.getAttribute('role'), document.getElementById(g.getAttribute('aria-labelledby')).textContent,
+      ...[...g.querySelectorAll('[data-tok-open]')].map((b) => [b.getAttribute('role'), b.getAttribute('aria-label'), b.getAttribute('aria-disabled'),
+        b.textContent.trim(), document.getElementById(b.getAttribute('aria-describedby')).textContent])];
+  })()`);
+  eq('the openings: a radio group named by the visible prompt, the app\'s hint, enabled', group, [
+    'radiogroup', 'Start the sentence:',
+    ['radio', null, null, `${OPENING.money}…`, 'Moves bank on the map of meaning'],
+    ['radio', null, null, `${OPENING.river}…`, 'Moves bank on the map of meaning']]);
+  check('the hint is CONTENT.md\'s', CONTENT.includes('Hint: Moves bank on the map of meaning'));
+  eq('one Tab stop in the group before a pick (the first)', p.tabStops, [0, -1]);
+  eq('glows drawn in SVG (WebKit paints no CSS filter on SVG shapes)', [p.dotGlows, p.cssFilters], [4, 0]);
+  check('"bank"\'s links glow through an SVG filter', p.linkFilters.length === 4 && p.linkFilters.every((f) => /^url\(#tok-live-linkglow\)$/.test(f)), JSON.stringify(p.linkFilters));
   const targets = await js(`[...document.querySelectorAll('[data-tok-open], [data-tok-try]')].map((b) => Math.round(b.getBoundingClientRect().height))`);
   check('openings and "Try it" are 44px or taller', targets.every((h) => h >= 44), JSON.stringify(targets));
   const before = { height: p.step4Height, mapTop: p.mapTop };
@@ -306,10 +322,10 @@ async function main() {
   const ring = await js(`[document.activeElement.getAttribute('data-tok-open'), getComputedStyle(document.activeElement).outlineStyle]`);
   eq('Tab from step 4\'s heading reaches the first opening', ring[0], 'money');
   check('a focused opening shows a focus ring', ring[1] !== 'none', ring[1]);
-  await press('Enter');
+  await press(' ');
   await sleep(180);
   p = await probe();
-  eq('Enter picks "money"', p.pressed, ['true', 'false']);
+  eq('Space picks "money"', p.pressed, ['true', 'false']);
   eq('the finished sentence shows at once', p.shown, ['money']);
   eq('only the shown sentence is exposed', p.sentenceHidden, ['true', null, 'true']);
   const mid = p.dot[0];
@@ -323,12 +339,12 @@ async function main() {
   eq('the announcement after "money" (CONTENT.md)', p.live, announced('money'));
   eq('step 4 keeps its height after a pick', [p.step4Height, p.mapTop], [before.height, before.mapTop]);
 
-  // Space picks the other; the picked one does nothing when pressed again.
-  await focus(chip('river'));
-  await press(' ');
+  // An arrow moves to the other and picks it; the picked one does nothing when pressed again.
+  await press('ArrowRight');
   await sleep(1300);
   p = await probe();
-  eq('Space picks "river"', p.pressed, ['false', 'true']);
+  eq('ArrowRight moves to and picks "river"', [p.pressed, await js(`document.activeElement.getAttribute('data-tok-open')`)], [['false', 'true'], 'river']);
+  eq('the Tab stop follows the pick', p.tabStops, [-1, 0]);
   expectBank('"river" settled', p, 'river');
   eq('"river": the river links show', p.links, [0, 1]);
   eq('the announcement after "river"', p.live, announced('river'));
@@ -337,6 +353,9 @@ async function main() {
   await sleep(200);
   p = await probe();
   eq('pressing the picked opening again changes nothing', [p.pressed, p.links], [['false', 'true'], [0, 1]]);
+  await sleep(5000);
+  p = await probe();
+  eq('the announcement is cleared once read (not met again reading on)', p.live, '');
 
   // "Try it" brings step 4 up and moves focus to its heading.
   await js('window.scrollTo(0, 0)');
@@ -440,15 +459,20 @@ async function main() {
   }
 }
 
+function cleanup() {
+  try { ws && ws.close(); } catch { /* ignore */ }
+  try { process.kill(-chrome.pid, 'SIGKILL'); } catch { /* ignore */ }
+  rmSync(profile, { recursive: true, force: true });
+}
+for (const sig of ['SIGINT', 'SIGTERM']) process.on(sig, () => { cleanup(); process.exit(130); });
+
 try {
   await main();
 } catch (err) {
   failures++;
   console.log(`FAIL crashed — ${err.stack || err}`);
 } finally {
-  try { ws && ws.close(); } catch { /* ignore */ }
-  try { process.kill(-chrome.pid, 'SIGKILL'); } catch { /* ignore */ }
-  rmSync(profile, { recursive: true, force: true });
+  cleanup();
 }
 console.log(`\n${passes} passed, ${failures} failed`);
 process.exit(failures ? 1 : 0);

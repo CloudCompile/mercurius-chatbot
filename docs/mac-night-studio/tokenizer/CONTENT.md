@@ -1,7 +1,7 @@
 # "How a model reads “bank”": the content
 
 **What this is:** every line a student sees or hears in Lesson 1.1's interactive on the Mac and the iPhone, every factual claim it makes, the source for each claim, and a checklist for the teacher who reviews it.
-**Where it shows:** Unit 1, Lesson 1 ("What happens when you type a prompt"), on the Mac and the iPhone, as a card at the end of the lesson part that holds Merc's first example (in the recorded lesson, the "Tokenization" part), before the check.
+**Where it shows:** Unit 1, Lesson 1 ("What happens when you type a prompt"), on the Mac and the iPhone, as a card at the end of the lesson part that holds Merc's first example (in the recorded lesson, the "Tokenization" part), before the check. Also rebuilt for the web on trymercurius.com's homepage, with the same lines, by `scripts/build-tokenizer.mjs` (regenerate it once an app release that changes these lines is live).
 **The code:** one source for both platforms. `ios/Packages/ChatFeature/Sources/Tokenizer/TokenizerInteractive.swift` (`TokenizerCopy` holds every line below; `TokenizerInteractiveTests` holds them to the rules in the last section) and `LessonInteractive.swift` (where the card goes). The views: the Mac's `Mac/NightTokenizerCard.swift`, the iPhone's `Tokenizer/LessonTokenizerCard.swift`.
 **Screenshots:** the Mac's `docs/mac-night-studio/key-shots/tokenizer-*.jpg` (the card, the map before a pick, each opening; the full set of 37 is kept outside the repo). The iPhone's `docs/ios-tokenizer/key-shots/` (the 16 Pro Max in light and dark, the SE at AX3 and AX5, where the card sits, a dark contact sheet, Reduce Motion, and the motion clip; the full set, an SE and a 16 Pro Max from Large to AX5 in every state, is kept outside the repo).
 

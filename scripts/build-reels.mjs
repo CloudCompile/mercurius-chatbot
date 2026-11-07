@@ -116,8 +116,8 @@ function captionHtml(text, pad) {
 function card(r, { home, pad }) {
   const id = `reel-${r.key}`;
   const p = (n) => pad + '  '.repeat(n);
-  // Homepage posters load with the page (check-demo.mjs fails on any request while the lesson
-  // replay above is stepped through) but at low priority; /ads posters are lazy.
+  // Homepage posters load with the page (check-tokenizer.mjs fails on any request while the
+  // "Try it" interactive above is used) but at low priority; /ads posters are lazy.
   const load = home ? ' fetchpriority="low"' : ' loading="lazy"';
   const s = secs(r.duration);
   return [

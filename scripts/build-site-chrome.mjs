@@ -6,7 +6,7 @@
 //   node scripts/build-site-chrome.mjs --check   # exit 1 if any page's shared parts drift from this file
 //
 // A page keeps its own <title>, description, canonical and Open Graph/Twitter text (read from the
-// page itself) unless OVERRIDES sets them here. Bump CSS_V / JS_V / ADS_V / DEMO_V when the file
+// page itself) unless OVERRIDES sets them here. Bump CSS_V / JS_V / ADS_V / TOKENIZER_V when the file
 // changes so returning visitors don't get a cached copy.
 import { readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
@@ -17,10 +17,10 @@ const CHECK = process.argv.includes('--check');
 
 const STORE = 'https://apps.apple.com/app/id6773192313';
 const SITE = 'https://trymercurius.com';
-const CSS_V = '16';
-const JS_V = '11';
+const CSS_V = '17';
+const JS_V = '12';
 const ADS_V = '3';
-const DEMO_V = '1';
+const TOKENIZER_V = '1';
 const FONTS = 'https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,500..700;1,9..144,500..700&family=Inter:wght@400..700&display=swap';
 
 const PAGES = ['index.html', 'features.html', 'modes.html', 'how-it-works.html', 'audience.html',
@@ -206,7 +206,7 @@ ${navItems(FOOTER, page, '          ')}
 
 function scripts(page) {
   const s = [`  <script src="/script.js?v=${JS_V}" defer></script>`];
-  if (page === 'index.html') s.push(`  <script src="/demo.js?v=${DEMO_V}" defer></script>`);
+  if (page === 'index.html') s.push(`  <script src="/tokenizer.js?v=${TOKENIZER_V}" defer></script>`);
   if (REEL_PAGES.has(page)) s.push(`  <script src="/ads.js?v=${ADS_V}" defer></script>`);
   return s.join('\n');
 }

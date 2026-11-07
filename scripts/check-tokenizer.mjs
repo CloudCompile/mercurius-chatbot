@@ -309,7 +309,9 @@ async function main() {
   check('the hint is CONTENT.md\'s', CONTENT.includes('Hint: Moves bank on the map of meaning'));
   eq('one Tab stop in the group before a pick (the first)', p.tabStops, [0, -1]);
   eq('glows drawn in SVG (WebKit paints no CSS filter on SVG shapes)', [p.dotGlows, p.cssFilters], [4, 0]);
-  check('"bank"\'s links glow through an SVG filter', p.linkFilters.length === 4 && p.linkFilters.every((f) => /^url\(#tok-live-linkglow\)$/.test(f)), JSON.stringify(p.linkFilters));
+  const glow = await js(`(() => { const g = document.querySelector('[data-tok-map] [data-role="dotglow-loan"]'); return [Number(g.getAttribute('r')), Number(g.getAttribute('opacity'))]; })()`);
+  eq('an unlit dot\'s glow is the app\'s shadow (white 0.4, radius 3: r 9, peak 0.157)', glow, [9, 0.16]);
+  check('"bank"\'s links glow through an SVG filter', p.linkFilters.length === 6 && p.linkFilters.every((f) => /^url\(#tok-live-linkglow\)$/.test(f)), JSON.stringify(p.linkFilters));
   const targets = await js(`[...document.querySelectorAll('[data-tok-open], [data-tok-try]')].map((b) => Math.round(b.getBoundingClientRect().height))`);
   check('openings and "Try it" are 44px or taller', targets.every((h) => h >= 44), JSON.stringify(targets));
   const before = { height: p.step4Height, mapTop: p.mapTop };
@@ -389,6 +391,36 @@ async function main() {
   await sleep(500);
   p = await probe();
   eq('Reduce Motion: settled', [p.ghost, p.now], [0, 1]);
+
+  // A quick re-pick mid-fade (money, river, back to money): no "bank" pops out in one frame.
+  await load({ width: 1280, reduceMotion: true });
+  const worstDrop = await js(`new Promise((resolve) => {
+    const map = document.querySelector('[data-tok-map]');
+    const at = () => {
+      const out = {};
+      for (let i = 0; i < 3; i++) {
+        const mark = map.querySelector('[data-role="mark-' + i + '"]');
+        const dot = map.querySelector('[data-role="bankdot-' + i + '"]');
+        if (!mark || !dot) continue;
+        const key = Math.round(dot.getAttribute('cx')) + ',' + Math.round(dot.getAttribute('cy'));
+        out[key] = (out[key] || 0) + Number(mark.getAttribute('opacity'));
+      }
+      return out;
+    };
+    let prev = at(), worst = 0;
+    const t0 = performance.now();
+    const tick = () => {
+      const cur = at();
+      for (const k of Object.keys(prev)) worst = Math.max(worst, prev[k] - (cur[k] || 0));
+      prev = cur;
+      if (performance.now() - t0 < 900) requestAnimationFrame(tick); else resolve(Math.round(worst * 1000) / 1000);
+    };
+    requestAnimationFrame(tick);
+    document.querySelector('[data-tok-open="money"]').click();
+    setTimeout(() => document.querySelector('[data-tok-open="river"]').click(), 120);
+    setTimeout(() => document.querySelector('[data-tok-open="money"]').click(), 240);
+  })`);
+  check(`Reduce Motion: quick re-picks fade, nothing pops (largest drop in one frame ${worstDrop})`, worstDrop < 0.2);
 
   // 5. Increase Contrast: a flat sky, no glows, no stars.
   await load({ width: 1280, contrast: true });

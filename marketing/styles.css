@@ -2138,6 +2138,7 @@ strong { color: var(--ink); font-weight: 600; }
   .tok-open[aria-checked="true"] { forced-color-adjust: none; background: SelectedItem; color: SelectedItemText; border-color: SelectedItemText; }
   .tok-open[aria-checked="true"] .tok-ring-on circle { fill: SelectedItemText; }
   .tok-open[aria-checked="true"] .tok-ring-on path { stroke: SelectedItem; }
+  .tok-open[aria-checked="true"]:focus-visible { outline-color: Highlight; }
   .tok-ring-off { stroke: ButtonText; }
   .tok-map, .tok-bar, .tok-plot::before { forced-color-adjust: none; }
 }

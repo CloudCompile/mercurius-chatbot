@@ -99,9 +99,12 @@
     DATA.words.forEach(function (word) {
       var f = lit[word.group];
       out['dot-' + word.text] = { r: round(3 + 1.5 * f) };
-      // The app's dot shadow (white 0.4 at radius 3, 0.9 at 6 once lit), drawn
-      // as a soft circle: WebKit paints no CSS filter on SVG shapes.
-      out['dotglow-' + word.text] = { r: round(9 + 7.5 * f), opacity: round(mix(0.4, 0.9, f)) };
+      // The app's dot shadow (white 0.4 at radius 3, 0.9 at radius 6 once lit:
+      // a Gaussian of sigma = radius) drawn as a soft circle, since WebKit
+      // paints no CSS filter on SVG shapes: r = 3 sigma, opacity = the
+      // shadow's alpha times its peak coverage (0.393 for the 6px dot at
+      // sigma 3, 0.245 for the 9px dot at sigma 6).
+      out['dotglow-' + word.text] = { r: round(9 + 9 * f), opacity: round(mix(0.157, 0.221, f)) };
       out['label-' + word.text] = mode.hc || mode.rt
         ? { fill: lerpHex('#DDE0F7', '#FFFFFF', f), 'fill-opacity': 1 }
         : { fill: '#FFFFFF', 'fill-opacity': round(mix(0.74, 1, f)) };
@@ -156,12 +159,15 @@
       s.push('<radialGradient id="' + id('glow-' + g) + '"><stop offset="0" stop-color="' + HUE[g] + '"/>'
         + '<stop offset="1" stop-color="' + HUE[g] + '" stop-opacity="0"/></radialGradient>');
     });
-    s.push('<radialGradient id="' + id('dotglow') + '"><stop offset="0" stop-color="#FFFFFF"/>'
-      + '<stop offset="0.35" stop-color="#FFFFFF" stop-opacity="0.55"/><stop offset="1" stop-color="#FFFFFF" stop-opacity="0"/></radialGradient>');
+    // A Gaussian's falloff out to 3 sigma.
+    s.push('<radialGradient id="' + id('dotglow') + '">'
+      + [[0, 1], [0.167, 0.9], [0.333, 0.66], [0.5, 0.4], [0.667, 0.19], [0.833, 0.075], [1, 0]].map(function (st) {
+        return '<stop offset="' + st[0] + '" stop-color="#FFFFFF" stop-opacity="' + st[1] + '"/>';
+      }).join('') + '</radialGradient>');
     // "bank"'s links glow lumen 0.8 (the app's shadow radius 4): an SVG filter,
     // which WebKit paints, over the whole map (a level line has no height).
     s.push('<filter id="' + id('linkglow') + '" filterUnits="userSpaceOnUse" x="0" y="0" width="' + size.w + '" height="' + size.h + '">'
-      + '<feDropShadow dx="0" dy="0" stdDeviation="2" flood-color="#9EA4FF" flood-opacity="0.8"/></filter>');
+      + '<feDropShadow dx="0" dy="0" stdDeviation="4" flood-color="#9EA4FF" flood-opacity="0.8"/></filter>');
     s.push('<radialGradient id="' + id('bankglow') + '"><stop offset="0" stop-color="#C7CBFF" stop-opacity="0.75"/>'
       + '<stop offset="1" stop-color="#C7CBFF" stop-opacity="0"/></radialGradient>');
     s.push('<linearGradient id="' + id('pill') + '" x1="0" y1="0" x2="1" y2="0">'
@@ -288,7 +294,9 @@
     var drawnMode = null;
     var byRole = {};
     var liveTimer = 0;
-    // copies[0] is "bank" now; copies[1] fades out from where it was (Reduce Motion only)
+    var containerQueries = !!(window.CSS && CSS.supports && CSS.supports('container-type: inline-size'));
+    // copies[0] is "bank" now; copies[1] and [2] are earlier ones still
+    // fading out where they were (Reduce Motion only).
     var copies = [];
     var lit = { money: 0, river: 0 };
     var frame = 0;
@@ -300,11 +308,11 @@
       cancelAnimationFrame(frame);
       size = mapSize(panelW);
       drawnMode = mode();
-      // The box's height follows the drawing (CSS sets the same height where
-      // container queries work; this keeps older browsers from letterboxing).
-      mapBox.style.height = round(size.h * Math.min(1, panelW / size.w)) + 'px';
+      // Where container queries work, CSS sizes the box to match the drawing;
+      // elsewhere the box's height follows it from here.
+      if (!containerQueries) mapBox.style.height = round(size.h * Math.min(1, panelW / size.w)) + 'px';
       var settled = targetState(ctx, size);
-      copies = [{ state: settled, opacity: 1 }, { state: settled, opacity: 0 }];
+      copies = [0, 1, 2].map(function (i) { return { state: settled, opacity: i ? 0 : 1, ctx: ctx }; });
       lit = { money: settled.money, river: settled.river };
       mapBox.innerHTML = mapMarkup(panelW, copies, lit, drawnMode, 'live');
       byRole = {};
@@ -337,7 +345,7 @@
       var fromLit = { money: lit.money, river: lit.river };
       var toLit = { money: to.money, river: to.river };
       // If a Reduce Motion crossfade was under way, finish its fades on this curve.
-      var op0 = copies[0].opacity, op1 = copies[1].opacity;
+      var ops = copies.map(function (c) { return c.opacity; });
       var t0 = null;
       cancelAnimationFrame(frame);
       var step = function (now) {
@@ -347,8 +355,7 @@
         var s = {};
         Object.keys(to).forEach(function (k) { s[k] = mix(from[k], to[k], p); });
         copies[0].state = s;
-        copies[0].opacity = mix(op0, 1, p);
-        copies[1].opacity = mix(op1, 0, p);
+        copies.forEach(function (c, i) { c.opacity = mix(ops[i], i ? 0 : 1, p); });
         lit = { money: mix(fromLit.money, toLit.money, p), river: mix(fromLit.river, toLit.river, p) };
         apply();
         if (p < 1) frame = requestAnimationFrame(step);
@@ -356,22 +363,29 @@
       frame = requestAnimationFrame(step);
     }
 
-    function crossfade(to) {
+    function crossfade(to, toCtx) {
       // Reduce Motion: nothing travels. The old "bank" fades out where it
-      // was while the new one fades in where it lands.
+      // was while the new one fades in where it lands. Every copy fades from
+      // wherever it is, so a pick mid-fade never makes one pop: coming back
+      // to a "bank" still fading out picks it up where it is.
       var fromLit = { money: lit.money, river: lit.river };
-      // The outgoing "bank" fades from wherever it is (a pick mid-fade doesn't pop).
-      var outFrom = copies[0].opacity;
-      copies[1] = { state: snapshot(), opacity: outFrom };
-      copies[0] = { state: to, opacity: 0 };
+      var current = { state: snapshot(), opacity: copies[0].opacity, ctx: copies[0].ctx };
+      var settled = function (c) { return c.ctx === toCtx && Math.abs(c.state.bx - to.bx) < 0.5 && Math.abs(c.state.by - to.by) < 0.5; };
+      var others = [current, copies[1], copies[2]].filter(function (c) { return c.opacity > 0; });
+      var back = others.filter(settled)[0];
+      var incoming = { state: to, opacity: back ? back.opacity : 0, ctx: toCtx };
+      var outgoing = others.filter(function (c) { return c !== back; })
+        .sort(function (a, b) { return b.opacity - a.opacity; }).slice(0, 2);
+      while (outgoing.length < 2) outgoing.push({ state: to, opacity: 0, ctx: toCtx });
+      copies = [incoming].concat(outgoing);
+      var ops = copies.map(function (c) { return c.opacity; });
       var t0 = null;
       cancelAnimationFrame(frame);
       var step = function (now) {
         if (t0 === null) t0 = now;
         var t = Math.min(1, (now - t0) / 1000 / FADE);
         var e = t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
-        copies[0].opacity = e;
-        copies[1].opacity = outFrom * (1 - e);
+        copies.forEach(function (c, i) { c.opacity = mix(ops[i], i ? 0 : 1, e); });
         lit = { money: mix(fromLit.money, to.money, e), river: mix(fromLit.river, to.river, e) };
         apply();
         if (t < 1) frame = requestAnimationFrame(step);
@@ -396,8 +410,9 @@
       if (quiet || !size) {
         draw();
       } else if (reduceMotion.matches) {
-        crossfade(targetState(ctx, size));
+        crossfade(targetState(ctx, size), ctx);
       } else {
+        copies[0].ctx = ctx;
         glide(targetState(ctx, size));
       }
       if (!quiet && live) {
@@ -419,6 +434,7 @@
       chip.tabIndex = i === 0 ? 0 : -1;
       chip.addEventListener('click', function () { pick(chip.getAttribute('data-tok-open')); });
       chip.addEventListener('keydown', function (event) {
+        if (event.altKey || event.ctrlKey || event.metaKey) return;   // Back/Forward and the like
         var step = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 }[event.key];
         if (!step) return;
         event.preventDefault();

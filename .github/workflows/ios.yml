@@ -50,13 +50,33 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+# Runner image and Xcode, the same for all three jobs.
+#
+# GitHub retired the macos-14 images on 2026-11-02
+# (actions/runner-images#15226); every job on them is cancelled at start
+# ("The configuration 'macos-14-arm64-us-default' is not supported"). Their
+# `latest-stable` Xcode was 16.2 (Swift 6.0.3), the toolchain the
+# "CI, Xcode 16.2" notes in the Swift sources and scripts/ci-compat-lint.py
+# describe.
+#
+# `macos-15` (Arm64) ships Xcode 16.0–16.4 and 26.0–26.3, so
+# `latest-stable` there would quietly move CI to Xcode 26. Its iOS
+# simulator runtimes are 18.5, 18.6 and 26.x, which leaves nothing for
+# Xcode 16.2's iOS 18.2 SDK. Xcode 16.4 (Swift 6.1, the iOS 18.5 / macOS
+# 15.5 SDKs) is the image default and the newest Xcode 16: the closest to
+# the old 16.2 that has a simulator runtime of its own. It is pinned
+# exactly, so an image update can't change it. Moving CI to Xcode 26 means
+# moving to the `macos-26` image as well (it has no Xcode 16).
+env:
+  CI_XCODE: '16.4'
+
 jobs:
   spm:
     name: SPM tests
     # macOS runner — `swift test` is fine on Linux for pure-Swift
     # packages, but NetworkingKit uses the URLSession data-delegate
     # path and DesignSystem uses UIColor shims, so we stay on macOS.
-    runs-on: macos-14
+    runs-on: macos-15
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
@@ -65,10 +85,11 @@ jobs:
         # Pin Xcode 16+ — swift-testing (`import Testing`, `@Test`,
         # `#expect`) is a required dep of our test suite and didn't
         # ship in Xcode 15. Update this pin when bumping
-        # swift-tools-version in Package.swift.
+        # swift-tools-version in Package.swift. The version is CI_XCODE
+        # above, shared by all three jobs.
         uses: maxim-lobanov/setup-xcode@v1
         with:
-          xcode-version: latest-stable
+          xcode-version: ${{ env.CI_XCODE }}
 
       - name: Print toolchain
         run: swift --version && xcodebuild -version
@@ -79,7 +100,7 @@ jobs:
 
   xcode:
     name: Xcode scheme tests
-    runs-on: macos-14
+    runs-on: macos-15
     # Above the test step's own 80-minute cap, so a slow or hung test step
     # FAILS (and its xcresult is uploaded) instead of the whole job being
     # cancelled with no diagnostics.
@@ -90,7 +111,7 @@ jobs:
       - name: Select Xcode
         uses: maxim-lobanov/setup-xcode@v1
         with:
-          xcode-version: latest-stable
+          xcode-version: ${{ env.CI_XCODE }}
 
       - name: Install toolchain (xcodegen, xcbeautify)
         run: brew install xcodegen xcbeautify
@@ -102,26 +123,36 @@ jobs:
       - name: List available iOS simulators
         # Diagnostic output for when the destination filter below
         # breaks on an image update. Keeps the cause visible in logs.
-        run: xcrun simctl list devices available | head -40
+        run: |
+          xcodebuild -version
+          echo "iOS Simulator SDK: $(xcrun --sdk iphonesimulator --show-sdk-version)"
+          xcrun simctl list runtimes available
+          xcrun simctl list devices available | head -60
 
       - name: Boot the test simulator
+        id: sim
         # The App Store screenshot test used to be the cold-simulator
         # warm-up (it ran first and retried its first launch). It no longer
-        # runs in CI, so boot the device the test step resolves (iPhone 16 on
-        # the newest iOS runtime) before it starts. Best effort: the test
-        # step boots it anyway if this does not.
+        # runs in CI, so boot the test device before the test step starts.
+        # Best effort: the test step boots it anyway if this does not.
+        # The device: an iPhone 16 on the runtime that matches the selected
+        # Xcode's iOS Simulator SDK (18.5 under Xcode 16.4). Not "the newest
+        # runtime": macos-15 also carries iOS 26 runtimes, which Xcode 16
+        # can't test on. Its udid goes to the test step, so the device
+        # booted here is the one tested.
         # Capped so setup + boot + the 80-minute test step stay inside the
         # job's 90 minutes and the xcresult upload still runs.
         continue-on-error: true
         timeout-minutes: 5
         run: |
-          udid=$(xcrun simctl list devices available -j | jq -r '
-            [.devices | to_entries[] | select(.key | test("iOS-[0-9]+-[0-9]+$")) | .key as $rt
-             | .value[] | select(.name == "iPhone 16")
-             | { udid, v: ($rt | capture("iOS-(?<a>[0-9]+)-(?<b>[0-9]+)$") | [(.a | tonumber), (.b | tonumber)]) }]
-            | sort_by(.v) | last | .udid // empty')
-          if [ -z "$udid" ]; then echo "no iPhone 16 simulator found; skipping"; exit 0; fi
-          echo "booting $udid"
+          sdk=$(xcrun --sdk iphonesimulator --show-sdk-version)
+          rt="iOS-$(echo "$sdk" | tr . -)"
+          udid=$(xcrun simctl list devices available -j | jq -r --arg rt "$rt" '
+            [.devices | to_entries[] | select(.key | endswith("." + $rt))
+             | .value[] | select(.name == "iPhone 16") | .udid] | first // empty')
+          if [ -z "$udid" ]; then echo "no iPhone 16 simulator on $rt; skipping"; exit 0; fi
+          echo "udid=$udid" >> "$GITHUB_OUTPUT"
+          echo "booting $udid (iPhone 16, $rt)"
           xcrun simctl boot "$udid" || true
           xcrun simctl bootstatus "$udid" -b
 
@@ -132,13 +163,14 @@ jobs:
         # ran out mid-retry.
         timeout-minutes: 80
         # Destination:
-        #   * `OS=latest` picks the newest installed runtime (macos-14
-        #     runners at the time of writing ship iOS 18.x).
-        #   * `name=iPhone 16` — under iOS 18 the common base device
-        #     stocked on GitHub runners is the iPhone 16 family.
-        #     iPhone 15 sims are only installed under iOS 17 runtimes,
-        #     so the combination of `OS=latest` + `iPhone 15` resolves
-        #     to nothing on current images.
+        #   * The simulator the boot step above booted, by udid: an
+        #     iPhone 16 on the runtime matching the selected Xcode's iOS
+        #     Simulator SDK (iOS 18.5 under Xcode 16.4 on macos-15).
+        #   * If that step found none, `OS=latest,name=iPhone 16`: `latest`
+        #     is the selected Xcode's SDK version, and the iPhone 16 family
+        #     is stocked under every iOS 18 and 26 runtime on GitHub's
+        #     images (iPhone 15 sims only under iOS 17 runtimes, which
+        #     macos-15 doesn't carry).
         # Skips:
         #   * `MercuriusTests/ViewSnapshotTests` — pixel references were
         #     recorded on a specific local sim and will not match a
@@ -157,12 +189,17 @@ jobs:
         # Pipe:
         #   * `set -o pipefail` so a failing xcodebuild fails the step
         #     even after flowing through xcbeautify.
+        env:
+          SIM_UDID: ${{ steps.sim.outputs.udid }}
         run: |
           set -o pipefail
+          dest='platform=iOS Simulator,OS=latest,name=iPhone 16'
+          if [ -n "$SIM_UDID" ]; then dest="platform=iOS Simulator,id=$SIM_UDID"; fi
+          echo "destination: $dest"
           xcodebuild test \
             -project Mercurius.xcodeproj \
             -scheme Mercurius \
-            -destination 'platform=iOS Simulator,OS=latest,name=iPhone 16' \
+            -destination "$dest" \
             -skip-testing:MercuriusTests/ViewSnapshotTests \
             -skip-testing:MercuriusUITests/PerformanceTests \
             -skip-testing:MercuriusUITests/AppStoreScreenshots \
@@ -184,11 +221,11 @@ jobs:
 
   mac:
     name: Mac app
-    # The same runner image and Xcode as the jobs above (Xcode 16.2 /
-    # Swift 6.0 / the macOS 15 SDK at the time of writing). The Mac app's
+    # The same runner image and Xcode as the jobs above (CI_XCODE: Xcode
+    # 16.4 / Swift 6.1 / the macOS 15.5 SDK). The Mac app's
     # own target (ios/MercuriusMac) is only compiled here: `swift test`
     # covers the packages, not the app shell or the screenshot harness.
-    runs-on: macos-14
+    runs-on: macos-15
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
@@ -196,7 +233,7 @@ jobs:
       - name: Select Xcode
         uses: maxim-lobanov/setup-xcode@v1
         with:
-          xcode-version: latest-stable
+          xcode-version: ${{ env.CI_XCODE }}
 
       - name: Print toolchain
         run: swift --version && xcodebuild -version && xcrun --sdk macosx --show-sdk-version

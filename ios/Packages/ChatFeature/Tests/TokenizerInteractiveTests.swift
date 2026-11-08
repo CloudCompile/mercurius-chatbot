@@ -350,7 +350,10 @@ struct LessonInteractiveSplitTests {
         #expect(halves.tail.first == BlockParser.parse(text).last)
         // The example and the key idea are in the first half, as parsed.
         let blocks = BlockParser.parse(text)
-        #expect(Array(halves.head.dropLast()) == Array(blocks.prefix(halves.head.count - 1)))
+        // Typed locals, for CI's slower Swift 6.1 (Xcode 16.4) type checker.
+        let headBlocks: [MessageBlock] = Array(halves.head.dropLast())
+        let parsedHead: [MessageBlock] = Array(blocks.prefix(halves.head.count - 1))
+        #expect(headBlocks == parsedHead)
         #expect(Self.words(halves.head + halves.tail) == Self.words(blocks), "no word is lost or moved")
     }
 

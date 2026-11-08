@@ -109,9 +109,11 @@ struct CertificateLayoutTests {
         #expect(layout.dateRule == CGRect(x: 96, y: 691, width: 290, height: 1))
         #expect(layout.signatureRule == CGRect(x: 670, y: 691, width: 290, height: 1))
         #expect(layout.seal == CGRect(x: 458, y: 576, width: 140, height: 140))
-        #expect(layout.lines.filter { $0.role == .label }.map { $0.text } == ["DATE", "INSTRUCTOR OR FAMILY MEMBER"])
-        // The signature label and the date label share a baseline.
+        // Typed locals, for CI's slower Swift 6.1 (Xcode 16.4) type checker.
         let labels = layout.lines.filter { $0.role == .label }
+        let labelTexts: [String] = labels.map { $0.text }
+        #expect(labelTexts == ["DATE", "INSTRUCTOR OR FAMILY MEMBER"])
+        // The signature label and the date label share a baseline.
         #expect(labels.count == 2 && labels[0].baseline == labels[1].baseline)
     }
 

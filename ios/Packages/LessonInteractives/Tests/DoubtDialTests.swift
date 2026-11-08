@@ -44,7 +44,11 @@ struct DoubtDialContentTests {
         // (3.8 against 3.0), which is why the middle beats the ends.
         let fakes = DoubtDialContent.posts.filter { !$0.isReal }.map(\.surprise)
         let real = DoubtDialContent.posts.filter(\.isReal).map(\.surprise)
-        #expect(fakes.reduce(0, +) * real.count > real.reduce(0, +) * fakes.count)
+        // The sums as typed locals: CI's Swift 6.1 (Xcode 16.4) can't
+        // type-check the two `reduce(0, +)` inside one #expect in time.
+        let fakeTotal: Int = fakes.reduce(0, +)
+        let realTotal: Int = real.reduce(0, +)
+        #expect(fakeTotal * real.count > realTotal * fakes.count)
     }
 
     @Test("No cut-off at any limit from 0 to 5 gets below 4 mistakes, not only the dial's five")

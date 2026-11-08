@@ -44,7 +44,10 @@ struct PatchTrackTests {
         // The loop: start → … → before the line → start.
         let lap = (0..<18).compactMap { PatchTrack.edge($0, $0 + 1) } + [PatchTrack.edge(18, 0)].compactMap { $0 }
         #expect(lap.count == 19)
-        #expect(lap.map(\.ticks).reduce(0, +) == 20)
+        // A typed local: CI's Swift 6.1 (Xcode 16.4) is slow to type-check
+        // `reduce(0, +)` inside #expect (it timed out in DoubtDialTests).
+        let lapTicks: Int = lap.map(\.ticks).reduce(0, +)
+        #expect(lapTicks == 20)
         #expect(PatchTrack.laps * 20 == PatchTrack.clockTicks)
         // The gates are on the loop, in race order.
         #expect(PatchTrack.gates == [3: 1, 6: 2, 14: 3])

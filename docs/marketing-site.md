@@ -12,7 +12,7 @@ which anyone could read at trymercurius.com/README.md).
 
 ```
 marketing/
-├── index.html          # Home: hero (Merc + Ad 1's exchange), lesson replay (#demo),
+├── index.html          # Home: hero (Merc + Ad 1's exchange), "Try it" interactive (#demo),
 │                       #   six reels (#reels), the five short reads, end card (#cta)
 ├── ads.html            # "Watch" (/ads): every reel, grouped by category, with captions
 ├── features.html, modes.html, how-it-works.html, audience.html, trust.html
@@ -22,7 +22,7 @@ marketing/
 ├── robots.txt, sitemap.xml
 ├── styles.css          # Single stylesheet; design tokens at top
 ├── script.js           # Mode-pill tabs, phone menu niceties, dynamic year
-├── demo.js             # Lesson replay step-through (homepage only)
+├── tokenizer.js        # "Try it" interactive: the openings and the map (homepage only)
 ├── ads.js              # Reel players: poster first, one at a time, muted + sound toggle
 ├── assets/
 │   ├── brand/               # Brand kit: logo lockups (dark + on-light), mark, wordmark,
@@ -53,69 +53,80 @@ Netlify rewrites the `.html` links in the pages to that form on deploy, and
 what the production server keeps and for how long — change it in the same
 PR as any retention or data-flow change on the server.
 
-## Lesson replay (homepage `#demo`)
+## "Try it" interactive (homepage `#demo`)
 
-Directly under the hero: a replay of a real Mercurius lesson (Unit 1,
-Lesson 1, "What happens when you type a prompt"), recorded October 7, 2026.
-No live AI calls. Spec: `docs/marketing-demo.md`.
+Directly under the hero: the app's Unit 1, Lesson 1 interactive, "How a
+model reads “bank”", rebuilt for the web. A visitor sees "I went to the
+bank" become tokens, then numbers, then a place on a map of meaning, and
+moves "bank" by picking how the sentence starts. Nothing is sent anywhere.
+Spec: `docs/marketing-demo.md`.
 
-- **Source:** `docs/evals/pacing-demo-capture-lesson1.json`, run 2
-  (`perRun[1]`), turns 1–3 of `curriculum-blocks-1`. The student taps were
-  scripted by the eval harness; Mercurius's replies are the model's real
-  output and are never edited. Turns 4+ are left out on purpose.
-- **Generated, not hand-written:** everything between `<!-- DEMO:START -->`
-  and `<!-- DEMO:END -->` in `index.html` comes from
-  `scripts/build-demo-replay.mjs`. It renders only the markup the app renders
-  (paragraphs, `**bold**`, `*italic*`, `---`, `[EX]`, `[KEY]`, `[Q]`), refuses
-  to run on markup it doesn't know, checks the hidden opener against the iOS
-  curriculum starter and each student turn against the previous check's
-  options, and stamps the capture's sha256 into the section. Never edit the
-  section by hand.
+- **Source: the app.** Every line, token, ID, number, opening and map
+  position comes from
+  `ios/Packages/ChatFeature/Sources/Tokenizer/TokenizerInteractive.swift`
+  (`TokenizerCopy`, `TokenizerInteractive`, `TokenizerContext`,
+  `MeaningMap`). The words and their sources are in
+  `docs/mac-night-studio/tokenizer/CONTENT.md`. The look follows the
+  iPhone card (`Tokenizer/LessonTokenizerCard.swift`) and the Night
+  palette.
+- **Generated, not hand-written:** the card between
+  `<!-- TOKENIZER:START -->` and `<!-- TOKENIZER:END -->` in `index.html`,
+  and the data block between `TOKENIZER-DATA:START` and `:END` in
+  `tokenizer.js`, come from `scripts/build-tokenizer.mjs`. It reads the
+  Swift source and refuses to run if a constant it reads stops being a
+  plain string or a line it rebuilds (a VoiceOver line, the finished
+  sentence) is built differently. It also checks the VoiceOver lines it
+  rebuilds against CONTENT.md, and draws the no-JS map with
+  `tokenizer.js`'s own map code. The section's heading and intro around
+  the card are hand-written in `index.html`.
 
   ```bash
-  node scripts/build-demo-replay.mjs           # regenerate the section
-  node scripts/build-demo-replay.mjs --check   # verify the page matches the capture
+  node scripts/build-tokenizer.mjs           # regenerate the card and the data
+  node scripts/build-tokenizer.mjs --check   # verify both match the app's source
   ```
 
-- **Behaviour:** without JS the whole replay is plain HTML (answered checks
-  show the recorded pick). `demo.js` turns it into a step-through: grade the
-  visitor's pick locally from the card's `data-answer`, say what the student
-  picked in the recorded session, then "Continue" reveals that pick and the
-  real reply. "Show the whole lesson" and "Start over" are in the panel
-  header. Styles are the "Lesson replay" block near the end of `styles.css`:
-  a dark panel on the navy page, the student's bubble in the ads' accent,
-  and Merc's bubble white, so the cards, checks and options inside it keep
-  the iOS `BrandColor`/`BrandRadius` values (darkened where needed for AA).
-- **Debug hook:** `?demo-step=turn1|answered1|turn2|answered2|turn3|answered3|end|whole`
-  opens the replay at that point. Earlier checks are answered with the
-  recorded pick, or with the right answer where none was recorded (turn 3's
-  check, in `end`). Read-only, no network; used for screenshots.
+- **Behaviour:** without JS the card reads in full, with the map drawn in
+  its first state (both openings show; a `<noscript>` line says they need
+  JavaScript). `tokenizer.js` redraws the map at the panel's width as an
+  SVG and moves "bank" on a pick with one spring, like the app's
+  `.smooth(duration: 0.7)`. With `prefers-reduced-motion` the old "bank"
+  fades out where it was while the new one fades in. Every version of the
+  finished sentence is laid out at once, so a pick never changes the
+  card's height. "Try it" brings step 4 up and moves focus to its
+  heading. Styles are the "Try it" block (section 12) in `styles.css`;
+  the card brings its own night (the app's palette), with
+  `prefers-contrast: more`, `prefers-reduced-transparency` and forced
+  colours handled.
+- **Screenshot hook:** `?tokenizer=money|river` opens with an opening
+  already picked. Read-only, no network.
 - **Check:** with the site served on 8160
   (`cd marketing && python3 -m http.server 8160`):
 
   ```bash
-  node scripts/check-demo.mjs   # or pass another URL; needs Google Chrome
+  node scripts/check-tokenizer.mjs   # or pass another URL; needs Google Chrome
   ```
 
   It drives headless Chrome over the DevTools protocol and fails (exit 1)
-  if the section drifts from the capture, the no-JS replay is incomplete,
-  the step order, keyboard path, grading, recorded-pick notes, focus moves,
-  live-region announcements, "Show the whole lesson" or "Start over" break,
-  the page overflows at 360/390px, demo.js adds layout shift, or any
-  Mercurius reply's text differs from the JSON. It loads the page dozens of
-  times; a full run (124 checks) takes about 20 seconds on a MacBook.
-- **Screenshots for review:** shoot the three states with the hook, e.g.
-  `index.html` (start), `index.html?demo-step=answered2` (mid) and
-  `index.html?demo-step=end` (end), at 360, 390, 768, 1280 and 1440px. Keep
-  them in `.shots/` at the repo root; it's gitignored. Crop each full-page
-  shot to the `#demo` section and lay start / mid / end side by side
-  (one sheet for 768–1440px, one for 360/390px) to review the states
-  together.
-- **Changing the replay:** don't edit the section or reword a reply. To use
-  a different run or more turns, change `RUN_INDEX`/`TURNS` at the top of
-  `scripts/build-demo-replay.mjs` and the matching `perRun[…]`/`TURNS` in
-  `check-demo.mjs`, regenerate, re-run both checks, and update the spec
-  (`docs/marketing-demo.md`) in the same PR.
+  if the card drifts from the app's source, the no-JS card is incomplete,
+  the openings don't work by mouse or keyboard, the names and
+  announcement aren't CONTENT.md's, "bank" doesn't land where the app
+  puts it, step 4 changes height on a pick, Reduce Motion or Increase
+  Contrast break, "Try it" doesn't land on step 4, a resize loses the pick,
+  anything is requested over the network while it's used, the map or the
+  numbers don't follow the app's size rules at 320 to 1440px, the page
+  overflows, tokenizer.js adds layout shift, or card text falls under
+  4.5:1. A full run (about 130 checks) takes about 30 seconds.
+- **Screenshots for review:** shoot `index.html`, `index.html?tokenizer=money`
+  and `index.html?tokenizer=river` at 360, 390, 768, 1280 and 1440px into
+  `.shots/` at the repo root (gitignored), cropped to `#demo`. Compare with
+  the app's shots in `docs/ios-tokenizer/key-shots/`.
+- **Changing it:** change the app first (the words go through the app's
+  content review: CONTENT.md). Once the app version with the new words is
+  live on the App Store, re-run `build-tokenizer.mjs` and both checks, so
+  the page never shows words students can't see yet. Nothing runs the
+  generator's `--check` in CI: re-run it after each app release that
+  touches `TokenizerInteractive.swift`. Don't reword the card on the page by hand. The section's intro is
+  ordinary page copy.
 
 ## Reels (homepage `#reels` and `/ads`)
 
@@ -178,8 +189,8 @@ source file names and internal notes.
   muted>` inside `<noscript>`; a `<noscript>` style in the head hides the
   poster and play button.
 - **Loading:** homepage posters load with the page at `fetchpriority="low"`
-  (not lazily), so no request fires while a visitor steps through the lesson
-  replay above (`check-demo.mjs` fails on any). `/ads` posters are lazy.
+  (not lazily), so no request fires while a visitor tries the interactive
+  above (`check-tokenizer.mjs` fails on any). `/ads` posters are lazy.
 - **Check:** `--check` also fails if `assets/ads/` holds a file no card uses,
   so a stray video can't be deployed by accident.
 
@@ -188,7 +199,7 @@ source file names and internal notes.
 The `<head>`, site header, footer and trailing `<script>` tags are the same
 on every page and are written by `scripts/build-site-chrome.mjs` (each page
 keeps its own title, description and canonical URL; overrides are in the
-script). Change them there, bump `CSS_V`/`JS_V`/`ADS_V` when a file changes,
+script). Change them there, bump `CSS_V`/`JS_V`/`ADS_V`/`TOKENIZER_V` when a file changes,
 then:
 
 ```bash
@@ -275,18 +286,18 @@ width, so paragraphs keep their line count when Inter swaps in.
 - Skip link at the very top.
 - Semantic landmarks (`<header>`, `<main>`, `<footer>`, `<nav>`).
 - Heading hierarchy: one `<h1>` (hero), `<h2>` per section, `<h3>`
-  inside cards.
+  inside cards (the "Try it" card's four steps are `<h4>`).
 - Mode tabs follow the WAI-ARIA tabs pattern (`script.js`): the
   selected tab is the tablist's only Tab stop (roving tabindex), Left/Right
   move between tabs and wrap, Home/End jump to the first/last, and the
   shown panel is the next Tab stop, its ring drawn on the card's edge.
 - All decorative images have `alt=""` + `aria-hidden`. The brand
   mark has the meaningful label on the wrapping link.
-- Focus: a 3px periwinkle ring on everything focusable (the darker accent
-  inside Merc's white bubble).
+- Focus: a 3px periwinkle ring on everything focusable, including inside
+  the "Try it" card.
 - `prefers-reduced-motion` turns off Merc's idle motion, the hero bubbles'
-  entrance and smooth scroll, and makes the lesson replay's reveal fade
-  instant. Without it, every hero animation runs once and ends within 5
+  entrance and smooth scroll, and makes "bank" fade instead of travel in
+  the "Try it" interactive. Without it, every hero animation runs once and ends within 5
   seconds (WCAG 2.2.2); it replays on hover or focus. When the hero art
   starts below the fold (phones), `script.js` holds it until it scrolls
   into view.
@@ -301,15 +312,17 @@ width, so paragraphs keep their line count when Inter swaps in.
   and the small one is a corner arc; from 1024px both sit in the margins
   beside the container (page heroes: the top-right corner, clear of the
   headline and lede).
-- Lesson replay: each check is a `radiogroup` of real buttons (arrows,
-  Home/End, Enter/Space), options are at least 44px tall, focus is
-  always visible, newly shown turns are announced in a polite live
-  region with focus moved to their first message, and cards carry
-  screen-reader labels ("Key idea:", "Example:", "Check:").
+- "Try it" interactive: the openings are a radio group of real buttons
+  named by the visible "Start the sentence:" (arrows move and pick, Space
+  picks, one Tab stop, at least 44px tall), with the app's hint, marked
+  disabled until the script runs; each step's picture is one labelled image (the app's VoiceOver
+  lines, from CONTENT.md); the map's label says where "bank" is; a pick is
+  announced in a polite live region; "Try it" moves focus to step 4's
+  heading.
 
 ## Performance
 
-- One HTML, one CSS, one JS file per page (the homepage adds `demo.js`
+- One HTML, one CSS, one JS file per page (the homepage adds `tokenizer.js`
   and `ads.js`, the ads page `ads.js`, all `defer`). The homepage is about
   600 KB on first load uncompressed (fonts about 193 KB, six reel posters
   about 220 KB) and loads no video until a play button is pressed.

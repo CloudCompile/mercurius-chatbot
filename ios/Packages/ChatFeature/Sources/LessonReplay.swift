@@ -5,8 +5,8 @@ import LessonInteractives
 
 /// DEBUG `-LessonReplay`: a lesson whose replies are the first three turns
 /// of a real recorded Unit 1, Lesson 1 session
-/// (docs/evals/pacing-demo-capture-lesson1.json, run 2 — the same session the
-/// marketing demo replays), streamed in small chunks at a realistic pace. It
+/// (docs/evals/pacing-demo-capture-lesson1.json, run 2 — the session the
+/// homepage replayed until November 2026), streamed in small chunks at a realistic pace. It
 /// lets the lesson screen's layout and scrolling be screenshotted without a
 /// network call or a model bill.
 ///

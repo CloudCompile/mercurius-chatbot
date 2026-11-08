@@ -15,6 +15,10 @@ import SwiftUI
 //
 // Nothing here is sent anywhere: the card is drawn on the device and changes
 // nothing on the wire, in the prompt or in what is stored.
+//
+// The website rebuilds this card for trymercurius.com's homepage from this
+// file (scripts/build-tokenizer.mjs reads the content, openings and map):
+// after an app release that changes them, re-run it (docs/marketing-site.md).
 
 // MARK: - The content
 

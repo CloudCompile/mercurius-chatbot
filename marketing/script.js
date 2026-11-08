@@ -6,7 +6,7 @@
  * and the phone menu is a native <details>. This script wires up the
  * tab switching, a few menu niceties, holding the hero's entrance until
  * it is on screen, and a tiny dynamic year in the footer. (Reel players
- * live in ads.js, the lesson replay in demo.js.)
+ * live in ads.js, the homepage's "Try it" interactive in tokenizer.js.)
  *
  * No frameworks, no dependencies. Loaded `defer` so it never blocks
  * parse.

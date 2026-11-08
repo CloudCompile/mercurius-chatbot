@@ -355,9 +355,8 @@ Chat bubbles: student `20px 20px 6px 20px` (tail bottom right), Merc
   Logo › Main app icon, Logo › TikTok navy circle).
 - **Focus:** `outline: 3px solid var(--periwinkle); outline-offset: 3px` on
   every focusable element (9.02:1 on `--night`, 7.99:1 on `--panel`). The ring
-  sits outside accent buttons so it is always read against navy. Inside the
-  white Merc bubble (lesson replay) keep the replay's existing light-context
-  focus style.
+sits outside accent buttons so it is always read against navy, and against
+the "Try it" card's night (12.15).
 
 ## 7. Logo
 
@@ -735,23 +734,39 @@ lockup (as Logo › In use sets it). Taglines already in use in the ads: "Learn 
 `--night-deep`, wordmark at 120 px, links in `--ink-2` (9.89:1), small print
 in `--ink-3` (7.08:1).
 
-### 12.15 Lesson replay (homepage `#demo`)
+### 12.15 "Try it" interactive (homepage `#demo`)
 
-The section between `DEMO:START` and `DEMO:END` is generated and must not be
-edited; restyle it only from `styles.css`. Mapping:
+The app's Unit 1, Lesson 1 card, "How a model reads “bank”". The card
+between `TOKENIZER:START` and `TOKENIZER:END` is generated from the app's
+source and must not be edited; restyle it only from `styles.css`
+(section 12). Mapping:
 
-- `.demo` panel: `--panel`, `2px solid var(--line)`, `--radius-lg`; header
-  text `--ink`, unit label `--ink-3`, progress `--ink-2`.
-- `.demo-btn` ("Show the whole lesson", "Start over"): secondary button
-  (12.1).
-- `.demo-sender` ("Mercurius"): `--ink-2`, sender dot `--periwinkle`.
-- `.demo-bubble--merc`: the white Merc bubble. Scope the replay's existing
-  light tokens (`--demo-surface`, `--demo-text`, `--demo-border`,
-  `--demo-accent-ink`, success and error colours) to the Merc bubble so its
-  cards, checks and options keep their AA-checked light styling unchanged.
-- `.demo-bubble--student`: `--accent` fill, white text (4.90), student radius.
-- `node scripts/build-demo-replay.mjs --check` and `node scripts/check-demo.mjs`
-  must still pass, including no horizontal overflow at 360 and 390 px.
+- `.tok-section`: a `--night-deep` band with a 1px `--line` top border,
+  keeping the homepage's night / deep alternation; intro and card side by
+  side from 1024px (intro sticky), stacked below.
+- `.tok` card: **the app's own night, not the site's tokens.** Like the
+  iPhone card it brings its own sky in both colour schemes: the Night
+  palette's dark values (`--tok-*`: surface `#121641`, raised `#1A1F52`,
+  ink `#F1F2FF`, ink2 `#B7BDE2`, ink3 `#959DCB`, accent text `#A5B4FC`,
+  prominent `#4338CA`), a 1px lumen edge, a corner light and 26 seeded
+  stars, radius 22px, padding 16px, at most 560px wide. Text pairs are the
+  app's contrast-checked ones; `check-tokenizer.mjs` holds each to 4.5:1 on
+  the card.
+- Type: SF Rounded (`ui-rounded`) for the title, step titles and controls,
+  falling back to Inter; the system monospace (SF Mono on Apple devices) for
+  tokens, IDs, values and the map's words; Inter for the rest. No new web
+  font is loaded.
+- The map is SVG drawn by `tokenizer.js` at the panel's width (the app's
+  geometry: fractions of the panel, fixed-pixel offsets), on the app's sky
+  gradient with 48 seeded stars.
+- `prefers-contrast: more` uses the app's high-contrast values (no glows or
+  stars, solid lines); `prefers-reduced-transparency` makes every wash
+  solid; forced colours draw borders for the card's inset edges and keep the
+  map's own colours.
+- Focus: the site's 3px periwinkle ring (it reads on the card's night).
+- `node scripts/build-tokenizer.mjs --check` and
+  `node scripts/check-tokenizer.mjs` must still pass, including no
+  horizontal overflow from 320 to 1440 px.
 
 ## 13. Copy from the ads and captions
 

@@ -1,53 +1,46 @@
-# trymercurius.com: lesson replay demo (spec)
+# trymercurius.com: the homepage "Try it" interactive (spec)
 
-Founder decision (October 7, 2026): a replay of a real Mercurius session, on the homepage directly under the hero. No live AI calls.
+Founder decision (November 7, 2026): replace the lesson replay under the hero with the app's tokenization interactive, the card from Lesson 1 of the Deep dive course (Unit 1, Lesson 1, "What happens when you type a prompt"): "How a model reads “bank”". (The app's other course, Basics, comes first in the app and has no such card.)
 
-## Source: real and unedited
-- `docs/evals/pacing-demo-capture-lesson1.json` was recorded October 7, 2026.
-  - **How:** a local server on `main` (8ce52ce) with production prompt settings (`USE_UNIFIED_PROMPT=1`) and the `blocks_v1` capability the iOS app sends. The scenario was `curriculum-blocks-1` in `scripts/eval-pacing.mjs`, with Mercurius running on Claude.
-  - **Who wrote what:** the student turns are scripted by the eval harness (our team). Mercurius's replies are the model's real, unedited output.
-- **Use `perRun[1]` (run 2), turns 1–3 only:**
-  1. The hidden lesson opener (the app sends `[CURRICULUM: Unit 1, Lesson 1] …`). Mercurius teaches tokenization with an EXAMPLE card and a KEY IDEA card, then asks a check ("I went to the bank to fish", answer B).
-  2. The student picked B (correct). Mercurius teaches next-token prediction with EXAMPLE and KEY IDEA cards, then asks a check (answer C).
-  3. The student picked A (wrong). Mercurius corrects the misconception (no database lookup) and asks a final check (answer B).
-- **Leave out turns 4 and later.** The harness's scripted answers there don't read like a real student, so the replay ends on turn 3's check.
-- **Never edit Mercurius's words.** Rendering the markup (paragraphs, `**bold**`, `*italic*`, `---`, `[EX]…[/EX]`, `[KEY]…[/KEY]`, `[Q]…ANS: X[/Q]`) as cards is fine. Changing, trimming or rewording the text is not.
+## What it is
+- The same card students try in the app (on iPhone and iPad since 2.3.0; the Mac app has the same card but isn't on the Mac App Store yet), with the same four steps and the same words, rebuilt for the web:
+  1. **You type:** "I went to the bank", drawn as the student's own turn.
+  2. **It's cut into tokens:** I, ·went, ·to, ·the, ·bank, with GPT-4's IDs, labelled illustrative.
+  3. **Each token becomes a list of numbers:** "·bank" → a list of illustrative values with bars, "+ thousands more".
+  4. **The numbers land in a map of meaning:** the visitor starts the sentence ("I got my paycheck, so…" or "I wanted to go fishing, so…") and "bank" moves toward loan and deposit, or toward shore and water.
+- It runs entirely on the page. It sends nothing, stores nothing and never tokenises the visitor's own text: the sentence is fixed, as in the app, because there is no faithful tokenizer for Claude that could run in a browser.
+
+## Source: the app, never reworded
+- **The words, numbers and map** come from `ios/Packages/ChatFeature/Sources/Tokenizer/TokenizerInteractive.swift`. Every claim the card makes, and its source, is in `docs/mac-night-studio/tokenizer/CONTENT.md`, which also holds the teacher-review checklist.
+- **The look** follows the iPhone card (`Tokenizer/LessonTokenizerCard.swift`): the Night palette's dark values, the app's sizes, SF Rounded and SF Mono on Apple devices (Inter and the system monospace elsewhere).
+- **Generated:** `scripts/build-tokenizer.mjs` writes the card into `marketing/index.html` and the data into `marketing/tokenizer.js`. It fails if the Swift source changes in a way it can't read, and checks the VoiceOver lines it rebuilds against CONTENT.md. To change a word, change the app (and its content review) first. Regenerate the site only once the app version carrying the new words is live on the App Store, so the page never shows words students can't see yet (and never lags behind them for long).
 
 ## Honesty (on the page, plain words)
-- Say what it is: a real Mercurius lesson, replayed. Our team scripted the student's taps; Mercurius's replies are unedited. Give the date it was recorded (October 7, 2026) and which lesson it is (Unit 1, Lesson 1 and its real title, found in the iOS curriculum data, `ios/Packages/CurriculumFeature`).
-- When a visitor answers a check, grade it locally from the `ANS:` line, then show what happened in the recorded session ("In this session, the student picked B." / "…picked A.") before Mercurius's real reply. Never imply the reply responds to the visitor's own pick.
-- End with the real next step, the App Store link (id 6773192313, using the self-hosted badge `/assets/app-store-badge.svg`), and a plain line that the full lesson continues in the app. No claims about features that aren't in the app (see `marketing/features.html` and the iOS code if unsure).
-
-## Look
-- **Match the marketing site:** use `marketing/styles.css` tokens, its type and its spacing. The demo panel should look like the app's lesson view so visitors recognise it in the App Store.
-  - **Message styling:** mirror the iOS chat styling: Mercurius's turns, then the student's turns as the app shows them.
-  - **Cards:** copy them from `ios/Packages/ChatFeature/Sources/BlockCards.swift`:
-    - KEY IDEA: accent-tinted, uppercase label;
-    - EXAMPLE: elevated surface with a border, secondary label;
-    - the check card: accent-tinted, with lettered options that turn success or error once graded.
-  - **Colours:** take them from the iOS `BrandColor` definitions (DesignSystem package) and keep contrast at WCAG AA.
-- **Restraint:** no device mock-up frame, no fake typing dots, no autoplay that delays content. Don't add gradients beyond what the site already uses. No new dependencies.
+- Say what it is: the interactive from the Deep dive's first lesson, the same card with the same words, rebuilt for the web. Name the course: "the app's first lesson" would point at Basics.
+- Say what it does with the visitor's taps: nothing leaves the page.
+- Keep every caveat the card carries: "illustrative IDs, from GPT-4’s tokenizer", "Illustrative values", "A 2-D sketch, drawn by hand". Don't present the map as measured, or the IDs as Claude's.
+- End with the real next step: the whole lesson, with Merc's questions, is in the free app (App Store id 6773192313, the self-hosted badge), "For iPhone and iPad, iOS 17 or later."
 
 ## Behaviour
-- **Progressive enhancement:**
-  - The whole replay (all three turns, fully rendered) is plain HTML in `marketing/index.html`, between `<!-- DEMO:START -->` and `<!-- DEMO:END -->`, so it reads fine with JS off and is indexable.
-  - `marketing/demo.js` turns it into a step-through:
-    - show turn 1; the visitor taps an option and gets local feedback;
-    - "Continue" reveals the recorded pick and the next reply;
-    - and so on to the final check, then the end panel.
-  - Provide "Show the whole lesson" and "Start over".
-- **Generator:** write `scripts/build-demo-replay.mjs`. It reads the eval JSON and writes the static HTML between the markers, plus a data attribute or inline JSON the script uses. Re-running it reproduces the section exactly, so anyone can verify the text is unedited.
+- **Progressive enhancement:** without JS the card reads in full, with the map in its first state; a `<noscript>` line says the openings need JavaScript.
+- **With JS:**
+  - the map is redrawn at the panel's width as SVG (200px tall, 240px from a 460px panel; under 300px, the 300px map scaled down, as `TokenizerMapScale`);
+  - a pick moves "bank", its glow, its pill and its lines with one spring (the app's `.smooth(duration: 0.7)`); the neighbourhood glows, the word dots and the labels follow on the same curve; the finished sentence switches at once;
+  - "Try it" brings step 4 up and moves focus to its heading.
+- **Height:** every version of the finished sentence is laid out at once, so a pick never changes the card's height.
 - **Accessibility:**
-  - real buttons and radio-like options with a keyboard path;
-  - visible focus;
-  - newly revealed content announced (a polite live region), with focus moved to the new turn's first element;
-  - options ≥ 44px tall;
-  - `prefers-reduced-motion` respected (any reveal transition becomes instant);
-  - semantic headings that fit the page's outline; card content readable by screen readers (labels such as "Key idea:", "Example:", "Check:").
-- **Responsive:** 360–1440px with no overflow. On phones it is a single column at a comfortable reading size.
-- **Performance:** no network requests beyond what's already on the page, no layout shift, a small `demo.js` loaded with `defer`.
+  - the openings are a radio group named by the visible "Start the sentence:" (arrows move and pick, Space picks), with the app's hint, at least 44px tall, visible focus; without JS they're marked disabled;
+  - each step's picture is one labelled image with the app's VoiceOver line; the map's label says where "bank" is;
+  - a pick is announced in a polite live region (the finished sentence, then the map's line);
+  - `prefers-reduced-motion`: nothing travels; the old "bank" fades out while the new one fades in;
+  - `prefers-contrast: more`: the app's high-contrast night (no glows, no stars, solid lines);
+  - `prefers-reduced-transparency`: solid washes, no glows or stars;
+  - forced colours: borders replace the card's inset edges; the map keeps its own colours.
+- **Responsive:** 320–1440px with no overflow; the numbers strip shows 8 values, then 5 in a line, then a column, as the app does.
+- **Performance:** no network requests while it's used, no layout shift, one small `tokenizer.js` loaded with `defer`.
 
-## Repo hygiene
-- **Branch** `feat/marketing-demo` (worktree in the session scratchpad). Don't touch the server, the iOS code or other pages.
-- **README:** update the site docs (then `marketing/README.md`, now `docs/marketing-site.md`): structure, plus how to regenerate the replay.
-- **Commit** the capture JSON in `docs/evals/` as provenance.
+## Checks
+`node scripts/build-tokenizer.mjs --check` and, with the site served on 8160, `node scripts/check-tokenizer.mjs` (headless Chrome).
+
+## History
+- From October 12, 2026 (PR #40) to November 2026 the section was a replay of a real recorded Unit 1, Lesson 1 session (`docs/evals/pacing-demo-capture-lesson1.json`, run 2, turns 1–3), written by `scripts/build-demo-replay.mjs` and checked by `scripts/check-demo.mjs`. Both scripts were removed with it; they are in git history. The capture stays in `docs/evals/` as provenance: the iOS DEBUG `-LessonReplay` mode replays the same session.

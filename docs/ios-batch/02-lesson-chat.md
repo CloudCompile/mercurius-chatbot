@@ -71,7 +71,7 @@ Other changes:
 
 ### DEBUG launch arguments (for screenshots, no network)
 
-- `-LessonReplay` (with `-LessonPreview` and optionally `-LessonSkipIntro`) streams the first three replies of the real recorded Unit 1 Lesson 1 session. It is the same capture the marketing demo uses: `docs/evals/pacing-demo-capture-lesson1.json`, run 2. Variations:
+- `-LessonReplay` (with `-LessonPreview` and optionally `-LessonSkipIntro`) streams the first three replies of the real recorded Unit 1 Lesson 1 session. It is the capture the homepage's old lesson replay used (removed November 2026): `docs/evals/pacing-demo-capture-lesson1.json`, run 2. Variations:
   - `-LessonReplayCut`: the first reply drops mid-stream.
   - `-LessonReplayFailEmpty`: the first reply fails before any text.
   - `-LessonReplaySlow`: streams four times slower.

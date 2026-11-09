@@ -15,8 +15,11 @@ export default function BlogDetailScreen() {
   useEffect(() => {
     fetchBlogPosts()
       .then((posts) => {
-        const idx = parseInt(blogId || '0', 10);
-        setPost(posts[idx] || null);
+        // Look up by the post's stable id, not its array index: the list and
+        // this screen each fetch the feed independently, so an index can
+        // point at a different post (or none) if the feed changed between.
+        const match = posts.find((p) => String(p.id) === String(blogId));
+        setPost(match || null);
       })
       .finally(() => setLoading(false));
   }, [blogId]);

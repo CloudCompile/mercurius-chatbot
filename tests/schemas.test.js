@@ -24,6 +24,7 @@ const {
   MAX_IMAGE_BYTES,
   ReportReason,
   ReportRequest,
+  ProgressionEventRequest,
   _legacyErrorCode,
 } = require('../lib/schemas');
 
@@ -393,6 +394,25 @@ describe('ReportRequest (Guideline 1.2)', () => {
     assert.deepEqual(out.data, body);
   });
 });
+
+describe('ProgressionEventRequest', () => {
+  const base = { sessionId: 'a'.repeat(20), reason: 'DAILY_RETURN' };
+
+  test('accepts an optional metadata bag of scalars', () => {
+    // Regression: with Zod 4 a single-argument z.record(...) makes safeParse
+    // throw ("Cannot read properties of undefined (reading '_zod')"), which
+    // crashed the validate() middleware for any body carrying metadata.
+    const parsed = ProgressionEventRequest.safeParse({ ...base, metadata: { k: 'v', n: 1, b: true } });
+    assert.equal(parsed.success, true, parsed.success ? '' : JSON.stringify(parsed.error?.issues));
+    assert.deepEqual(parsed.data.metadata, { k: 'v', n: 1, b: true });
+  });
+
+  test('rejects a non-scalar metadata value without throwing', () => {
+    assert.doesNotThrow(() => ProgressionEventRequest.safeParse({ ...base, metadata: { nested: { a: 1 } } }));
+    assert.equal(ProgressionEventRequest.safeParse({ ...base, metadata: { nested: { a: 1 } } }).success, false);
+  });
+});
+
 
 describe('legacyErrorCode mapping', () => {
   test('session path → invalid_session', () => {

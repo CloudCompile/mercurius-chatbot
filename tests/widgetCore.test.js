@@ -461,6 +461,16 @@ describe('history', () => {
     assert.equal(Core.conversationTitle([{ role: 'user', content: 'a'.repeat(80) }]), 'a'.repeat(60) + '...');
   });
 
+  test('a null/undefined entry in a stored thread is skipped, not fatal', () => {
+    // Regression: a corrupt localStorage thread (a null element) used to throw
+    // in conversationTitle / precedingVisibleUser while titling or re-rendering.
+    assert.doesNotThrow(() => Core.conversationTitle([null], 'fb'));
+    assert.equal(Core.conversationTitle([null, { role: 'user', content: 'Hi' }], 'fb'), 'Hi');
+    assert.doesNotThrow(() => Core.precedingVisibleUser([null], 1));
+    assert.equal(Core.precedingVisibleUser([null, { role: 'user', content: 'Hi' }], 2), 'Hi');
+    assert.equal(Core.precedingVisibleUser(null, 0), null);
+  });
+
   test('stored threads keep the opener and the newest turns', () => {
     const h = [opener];
     for (let i = 0; i < 250; i++) h.push({ role: i % 2 ? 'user' : 'assistant', content: `m${i}` });

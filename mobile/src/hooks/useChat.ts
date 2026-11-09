@@ -2,12 +2,13 @@ import { useRef, useCallback } from 'react';
 import { Alert } from 'react-native';
 import { useChatStore } from '../stores/useChatStore';
 import { useSessionStore } from '../stores/useSessionStore';
-import { sendChatMessage } from '../services/api';
+import { streamChatMessage } from '../services/api';
 import * as db from '../services/database';
 import { Conversation } from '../types';
 
 export function useChat() {
   const abortRef = useRef<AbortController | null>(null);
+  const stoppedByUserRef = useRef(false);
 
   const sendMessage = useCallback(async (text: string) => {
     const store = useChatStore.getState();
@@ -23,9 +24,19 @@ export function useChat() {
     const msgHistory = currentMessages.map((m) => ({ role: m.role, content: m.content }));
 
     const streamId = store.startStreaming();
+    // A fresh controller per send: cancelStream() aborts the in-flight stream,
+    // and a new send replaces any previous one.
+    const controller = new AbortController();
+    abortRef.current = controller;
+    stoppedByUserRef.current = false;
 
     try {
-      const data = await sendChatMessage(msgHistory, session.sessionId);
+      const data = await streamChatMessage(
+        msgHistory,
+        session.sessionId,
+        (delta) => useChatStore.getState().appendStreamDelta(delta),
+        controller.signal
+      );
 
       const finalContent = data.reply || '';
       useChatStore.getState().finalizeStream(finalContent);
@@ -64,17 +75,25 @@ export function useChat() {
         }
       }
     } catch (error: any) {
-      const errorMsg = error.name === 'AbortError'
-        ? 'Request timed out. The server may be busy — try again.'
-        : `Error: ${error.message || 'Unknown error'}`;
-      useChatStore.getState().setError(streamId, errorMsg);
-      console.warn('[Mercurius] sendMessage failed:', error.message);
+      // A user-initiated Stop keeps whatever streamed so far rather than
+      // showing it as an error. A timeout/abort we did NOT trigger still
+      // surfaces as an error.
+      if (controller.signal.aborted && stoppedByUserRef.current) {
+        useChatStore.getState().finalizeStream(useChatStore.getState().streamingContent);
+      } else {
+        const errorMsg = error.name === 'AbortError'
+          ? 'Request timed out. The server may be busy — try again.'
+          : `Error: ${error.message || 'Unknown error'}`;
+        useChatStore.getState().setError(streamId, errorMsg);
+        console.warn('[Mercurius] sendMessage failed:', error.message);
+      }
+    } finally {
+      if (abortRef.current === controller) abortRef.current = null;
     }
-
-    abortRef.current = null;
   }, []);
 
   const cancelStream = useCallback(() => {
+    stoppedByUserRef.current = true;
     abortRef.current?.abort();
     abortRef.current = null;
   }, []);

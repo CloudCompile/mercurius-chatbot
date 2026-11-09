@@ -11,6 +11,7 @@ const ICON_MAP: Record<string, string> = {
   // Chat
   'menu': '\u2630',        // ☰
   'arrow-up': '\u2191',    // ↑
+  'stop': '\u25A0',        // ■
   'close': '\u2715',       // ✕
   'flame': '\u2666',       // ♦
   'flash': '\u26A1',       // ⚡ (unicode, not emoji)

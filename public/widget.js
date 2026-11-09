@@ -333,6 +333,7 @@
     function conversationTitle(history, fallback) {
       for (var i = 0; i < (history || []).length; i++) {
         var m = history[i];
+        if (!m || typeof m !== 'object') continue;
         if (m.role === 'user' && !isHiddenTurn(m) && String(m.content || '').trim()) {
           var t = String(m.content).trim();
           return t.length > 60 ? t.slice(0, 60) + '...' : t;
@@ -343,8 +344,10 @@
 
     // The nearest turn the student actually typed before `index`.
     function precedingVisibleUser(history, index) {
-      for (var i = Math.min(index, history.length) - 1; i >= 0; i--) {
-        var m = history[i];
+      var list = Array.isArray(history) ? history : [];
+      for (var i = Math.min(index, list.length) - 1; i >= 0; i--) {
+        var m = list[i];
+        if (!m || typeof m !== 'object') continue;
         if (m.role === 'user' && !isHiddenTurn(m)) return String(m.content || '');
       }
       return null;

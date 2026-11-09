@@ -3499,19 +3499,22 @@ app.get('/api/pre-briefing', chatLimiter, asyncRoute(async (req, res) => {
 app.get('/api/challenge', async (req, res) => {
   try {
     const eventsData = await getEventsData();
-    if (!eventsData || !eventsData.upcoming || eventsData.upcoming.length === 0) {
+    const upcoming = Array.isArray(eventsData && eventsData.upcoming) ? eventsData.upcoming : [];
+    // Skip non-object items: a null first row would throw on .keyQuestions.
+    const next = upcoming.find((m) => m && typeof m === 'object');
+    if (!next) {
       return res.status(404).json({ error: 'no_challenge', message: 'No upcoming meeting scheduled yet.' });
     }
-    const next = eventsData.upcoming[0];
-    const challengePrompt = next.keyQuestions && next.keyQuestions.length > 0
-      ? next.keyQuestions[0]
+    const keyQuestions = Array.isArray(next.keyQuestions) ? next.keyQuestions : [];
+    const challengePrompt = keyQuestions.length > 0
+      ? keyQuestions[0]
       : 'What do you think about the topics for this meeting?';
     return res.json({
       title: next.title,
       date: next.date,
       description: next.description,
-      topics: next.topics || [],
-      keyQuestions: next.keyQuestions || [],
+      topics: Array.isArray(next.topics) ? next.topics : [],
+      keyQuestions,
       challengePrompt: challengePrompt,
       starter: 'I want to take on the weekly challenge: ' + challengePrompt,
     });

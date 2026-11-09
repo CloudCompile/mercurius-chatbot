@@ -136,6 +136,24 @@ describe('clubContext', () => {
       assert.match(buildMeetingContext({ upcoming: 'soon' }), /Nothing special is on the calendar/);
     });
 
+    test('a null or wrong-typed item in the feed degrades instead of throwing', () => {
+      // Regression: a null element (or topics/keyQuestions sent as strings)
+      // used to throw inside buildMeetingContext, which runs on every widget
+      // chat turn and on /api/pre-briefing.
+      assert.doesNotThrow(() => buildMeetingContext({ upcoming: [null] }));
+      assert.doesNotThrow(() => buildMeetingContext({ upcoming: [{ title: 'x', topics: 'a,b' }] }));
+      assert.doesNotThrow(() => buildMeetingContext({ upcoming: [{ title: 'x', keyQuestions: 'q' }] }));
+      assert.doesNotThrow(() => buildMeetingContext({ past: [null] }));
+
+      // A bad item is skipped; a good sibling still renders.
+      const out = buildMeetingContext({
+        upcoming: [null, { title: 'Good', topics: 'not-an-array', keyQuestions: 'not-an-array' }],
+      });
+      assert.match(out, /\*\*Good\*\*/);
+      assert.match(out, /Reference the actual topics and key questions/);
+      assert.doesNotMatch(out, /undefined/);
+    });
+
     test('pure: the same feed gives the same bytes', () => {
       assert.equal(buildMeetingContext(liveEvents()), buildMeetingContext(liveEvents()));
     });
@@ -151,6 +169,14 @@ describe('clubContext', () => {
 
     test('empty for a missing, empty or non-list feed', () => {
       for (const posts of [null, undefined, [], {}, 'x']) assert.equal(buildBlogContext(posts), '');
+    });
+
+    test('a null item in the feed is skipped, not fatal', () => {
+      // Regression: a null element used to throw (reading .title).
+      assert.doesNotThrow(() => buildBlogContext([null]));
+      const out = buildBlogContext([null, { title: 'Real', author: 'A', date: 'D', category: 'C', summary: 'S', content: 'Body' }]);
+      assert.match(out, /\*\*"Real"\*\* by A/);
+      assert.doesNotMatch(out, /undefined/);
     });
   });
 

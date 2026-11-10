@@ -5,27 +5,29 @@ import * as SplashScreen from 'expo-splash-screen';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { ThemeProvider, useTheme } from '../src/theme';
 import { AchievementToastProvider } from '../src/components/ui/AchievementToast';
-import { zustandStorage } from '../src/services/storage';
+import { gateState } from '../src/services/gate';
 
 SplashScreen.preventAutoHideAsync();
 
 function RootLayoutInner() {
   const { colors, isDark } = useTheme();
-  const [hasOnboarded, setHasOnboarded] = useState<boolean | null>(null);
+  const [ready, setReady] = useState(false);
+  const [initialRoute, setInitialRoute] = useState<'onboarding' | '(tabs)'>('onboarding');
 
   useEffect(() => {
-    const val = zustandStorage.getItem('hasOnboarded');
-    setHasOnboarded(val === 'true');
+    // Age/consent gate + onboarding, same policy the index redirect enforces.
+    setInitialRoute(gateState() === 'done' ? '(tabs)' : 'onboarding');
+    setReady(true);
     SplashScreen.hideAsync();
   }, []);
 
-  if (hasOnboarded === null) return null;
+  if (!ready) return null;
 
   return (
     <GestureHandlerRootView style={{ flex: 1, backgroundColor: colors.background }}>
       <StatusBar style={isDark ? 'light' : 'dark'} />
       <AchievementToastProvider>
-        <Stack screenOptions={{ headerShown: false }} initialRouteName={hasOnboarded ? '(tabs)' : 'onboarding'}>
+        <Stack screenOptions={{ headerShown: false }} initialRouteName={initialRoute}>
           <Stack.Screen name="onboarding" />
           <Stack.Screen name="(tabs)" />
         </Stack>

@@ -106,7 +106,7 @@ export default function ClubScreen() {
                   onPress={() =>
                     router.push({
                       pathname: '/(tabs)/club/[blogId]',
-                      params: { blogId: String(i) },
+                      params: { blogId: String(post.id) },
                     })
                   }
                 />

@@ -6,7 +6,6 @@ import { useTheme } from '../../theme';
 interface Props {
   onQuiz: () => void;
   onReport: () => void;
-  onLeaderboard: () => void;
   onSummary: () => void;
   disabled?: boolean;
 }
@@ -14,17 +13,15 @@ interface Props {
 const TOOLS = [
   { id: 'quiz', label: 'Quiz', icon: 'help-circle' },
   { id: 'report', label: 'Report', icon: 'bar-chart' },
-  { id: 'board', label: 'Board', icon: 'trophy' },
   { id: 'summary', label: 'Summary', icon: 'document-text' },
 ];
 
-export function ToolBar({ onQuiz, onReport, onLeaderboard, onSummary, disabled }: Props) {
+export function ToolBar({ onQuiz, onReport, onSummary, disabled }: Props) {
   const { colors, typography: typo } = useTheme();
 
   const handlers: Record<string, () => void> = {
     quiz: onQuiz,
     report: onReport,
-    board: onLeaderboard,
     summary: onSummary,
   };
 

@@ -10,7 +10,6 @@ import { ConversationTabs } from '../../src/components/chat/ConversationTabs';
 import { ToolBar } from '../../src/components/chat/ToolBar';
 import { QuizPanel } from '../../src/components/chat/QuizPanel';
 import { ReportCardPanel } from '../../src/components/chat/ReportCardPanel';
-import { LeaderboardPanel } from '../../src/components/chat/LeaderboardPanel';
 import { useChat } from '../../src/hooks/useChat';
 import { useChatStore } from '../../src/stores/useChatStore';
 import { useSessionStore } from '../../src/stores/useSessionStore';
@@ -19,13 +18,12 @@ const logoSource = require('../../assets/logo-watermark.png');
 
 export default function ChatScreen() {
   const { colors, isDark } = useTheme();
-  const { sendMessage, isLoading, messages } = useChat();
+  const { sendMessage, cancelStream, isLoading, messages } = useChat();
   const messageCount = useSessionStore((s) => s.messageCount);
 
   const [showReflection, setShowReflection] = useState(false);
   const [showQuiz, setShowQuiz] = useState(false);
   const [showReport, setShowReport] = useState(false);
-  const [showLeaderboard, setShowLeaderboard] = useState(false);
 
   // Consume pending message (from curriculum lesson start)
   const pendingMessage = useChatStore((s) => s.pendingMessage);
@@ -93,17 +91,15 @@ export default function ChatScreen() {
         <ToolBar
           onQuiz={() => setShowQuiz(true)}
           onReport={() => setShowReport(true)}
-          onLeaderboard={() => setShowLeaderboard(true)}
           onSummary={handleSummary}
           disabled={isLoading}
         />
       )}
 
-      <ChatInput onSend={handleSend} disabled={isLoading} />
+      <ChatInput onSend={handleSend} onStop={cancelStream} disabled={isLoading} />
 
       <QuizPanel visible={showQuiz} onClose={() => setShowQuiz(false)} />
       <ReportCardPanel visible={showReport} onClose={() => setShowReport(false)} />
-      <LeaderboardPanel visible={showLeaderboard} onClose={() => setShowLeaderboard(false)} />
     </KeyboardAvoidingView>
   );
 }

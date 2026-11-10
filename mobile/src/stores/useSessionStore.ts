@@ -2,10 +2,28 @@ import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import { zustandStorage } from '../services/storage';
 
+// 24 random bytes as hex. Prefer WebCrypto (available in the app runtime and
+// on web); fall back to Math.random only if it is missing. The session id is
+// the bearer capability for the server's data (there are no accounts), so it
+// must be unguessable and long enough for the server's own rules — the erasure
+// route (DELETE /api/session/:id) refuses ids shorter than 16 chars.
+function randomHex(byteLength: number): string {
+  const bytes = new Uint8Array(byteLength);
+  const webcrypto = (globalThis as any).crypto;
+  if (webcrypto && typeof webcrypto.getRandomValues === 'function') {
+    webcrypto.getRandomValues(bytes);
+  } else {
+    for (let i = 0; i < bytes.length; i++) bytes[i] = Math.floor(Math.random() * 256);
+  }
+  let out = '';
+  for (let i = 0; i < bytes.length; i++) out += (bytes[i] < 16 ? '0' : '') + bytes[i].toString(16);
+  return out;
+}
+
 function generateId(): string {
-  return 'xxxx-xxxx-xxxx'.replace(/x/g, () =>
-    Math.floor(Math.random() * 16).toString(16)
-  );
+  // 'merc_' + 48 hex chars = 53 chars / 192 bits, the same shape the web
+  // widget mints (Core.newSessionId).
+  return 'merc_' + randomHex(24);
 }
 
 interface SessionState {

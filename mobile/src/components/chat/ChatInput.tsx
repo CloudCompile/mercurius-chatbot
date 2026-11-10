@@ -10,10 +10,11 @@ const Haptics = Platform.OS !== 'web' ? require('expo-haptics') : { impactAsync:
 
 interface Props {
   onSend: (text: string) => void;
+  onStop?: () => void;
   disabled?: boolean;
 }
 
-export function ChatInput({ onSend, disabled }: Props) {
+export function ChatInput({ onSend, onStop, disabled }: Props) {
   const [text, setText] = useState('');
   const [focused, setFocused] = useState(false);
   const { colors, spacing, isDark } = useTheme();
@@ -36,6 +37,9 @@ export function ChatInput({ onSend, disabled }: Props) {
 
   const canSend = text.trim().length > 0 && !disabled;
   const grad = isDark ? gradients.dark : gradients.light;
+  // While a reply is streaming the send button becomes Stop, so a long turn
+  // can be cancelled (previously cancelStream was never wired to anything).
+  const showStop = disabled && !!onStop;
 
   return (
     <View style={[styles.container, { backgroundColor: colors.surface, borderTopColor: colors.border }]}>
@@ -62,17 +66,17 @@ export function ChatInput({ onSend, disabled }: Props) {
         blurOnSubmit={false}
       />
       <Animated.View style={{ transform: [{ scale: scaleAnim }] }}>
-        <Pressable onPress={handleSend} disabled={!canSend}>
+        <Pressable onPress={showStop ? onStop : handleSend} disabled={!canSend && !showStop}>
           <LinearGradient
-            colors={canSend ? grad.send : [colors.surfaceElevated, colors.surfaceElevated]}
+            colors={showStop ? [colors.accent, colors.accent] : canSend ? grad.send : [colors.surfaceElevated, colors.surfaceElevated]}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 1 }}
-            style={[styles.sendButton, canSend && shadows.small]}
+            style={[styles.sendButton, (canSend || showStop) && shadows.small]}
           >
             <Icon
-              name="arrow-up"
-              size={22}
-              color={canSend ? '#ffffff' : colors.textSecondary}
+              name={showStop ? 'stop' : 'arrow-up'}
+              size={showStop ? 20 : 22}
+              color={showStop || canSend ? '#ffffff' : colors.textSecondary}
             />
           </LinearGradient>
         </Pressable>

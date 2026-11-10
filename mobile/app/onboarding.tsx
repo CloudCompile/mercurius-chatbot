@@ -5,7 +5,13 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Icon } from '../src/components/ui/Icon';
 import { useTheme } from '../src/theme';
 import { gradients } from '../src/theme/colors';
-import { zustandStorage } from '../src/services/storage';
+import {
+  AGE_BLOCK_DAYS,
+  AGE_CHOICES,
+  ageLabel,
+  grantConsent,
+  recordAgeChoice,
+} from '../src/services/gate';
 
 const { width } = Dimensions.get('window');
 
@@ -30,15 +36,20 @@ const PAGES = [
   },
 ];
 
+type Step = 'pages' | 'age' | 'consent' | 'blocked';
+
 export default function OnboardingScreen() {
   const { colors, typography: typo, isDark } = useTheme();
   const router = useRouter();
   const [activeIndex, setActiveIndex] = useState(0);
+  const [step, setStep] = useState<Step>('pages');
+  const [age, setAge] = useState<number | null>(null);
+  const [agreed, setAgreed] = useState(false);
   const listRef = useRef<FlatList>(null);
   const grad = isDark ? gradients.dark : gradients.light;
 
-  const handleGetStarted = () => {
-    zustandStorage.setItem('hasOnboarded', 'true');
+  const finish = () => {
+    grantConsent();
     router.replace('/(tabs)/chat');
   };
 
@@ -46,9 +57,122 @@ export default function OnboardingScreen() {
     if (activeIndex < PAGES.length - 1) {
       listRef.current?.scrollToIndex({ index: activeIndex + 1, animated: true });
     } else {
-      handleGetStarted();
+      setStep('age');
     }
   };
+
+  const handleAgeContinue = () => {
+    if (age === null) return;
+    if (recordAgeChoice(age)) {
+      setStep('consent');
+    } else {
+      setStep('blocked');
+    }
+  };
+
+  if (step === 'age') {
+    return (
+      <LinearGradient colors={grad.background} style={styles.container}>
+        <View style={styles.page}>
+          <Text style={[styles.title, { color: colors.accent, ...typo.title }]}>
+            How old are you?
+          </Text>
+          <Text style={[styles.description, { color: colors.textSecondary, ...typo.body }]}>
+            Checked on this device only — your age isn&apos;t saved or sent anywhere.
+          </Text>
+          <View style={styles.ageGrid}>
+            {AGE_CHOICES.map((a) => (
+              <Pressable
+                key={a}
+                onPress={() => setAge(a)}
+                style={[
+                  styles.ageChoice,
+                  {
+                    borderColor: age === a ? colors.accent : colors.border,
+                    backgroundColor: age === a ? colors.accentDim : colors.surfaceElevated,
+                  },
+                ]}
+              >
+                <Text style={{ color: age === a ? colors.accent : colors.text, ...typo.body }}>
+                  {ageLabel(a)}
+                </Text>
+              </Pressable>
+            ))}
+          </View>
+        </View>
+        <View style={styles.buttons}>
+          <Pressable
+            onPress={handleAgeContinue}
+            disabled={age === null}
+            style={[styles.getStartedBtn, { backgroundColor: colors.accent, opacity: age === null ? 0.5 : 1 }]}
+          >
+            <Text style={styles.getStartedText}>Continue</Text>
+          </Pressable>
+        </View>
+      </LinearGradient>
+    );
+  }
+
+  if (step === 'blocked') {
+    return (
+      <LinearGradient colors={grad.background} style={styles.container}>
+        <View style={styles.page}>
+          <Text style={[styles.title, { color: colors.accent, ...typo.title }]}>
+            Mercurius is for ages 13 and up
+          </Text>
+          <Text style={[styles.description, { color: colors.textSecondary, ...typo.body }]}>
+            Come back when you&apos;re 13. This device stays blocked for {AGE_BLOCK_DAYS} days —
+            your age itself isn&apos;t saved. If it&apos;s a mistake, ask a teacher or parent.
+          </Text>
+        </View>
+      </LinearGradient>
+    );
+  }
+
+  if (step === 'consent') {
+    return (
+      <LinearGradient colors={grad.background} style={styles.container}>
+        <View style={styles.page}>
+          <Text style={[styles.title, { color: colors.accent, ...typo.title }]}>
+            Before you start
+          </Text>
+          <Text style={[styles.description, { color: colors.textSecondary, ...typo.body, textAlign: 'left' }]}>
+            • Your messages are sent through our server to Anthropic&apos;s Claude to generate
+            replies. Our server keeps your chat messages for 90 days.{'\n\n'}
+            • There&apos;s no account. Mercurius uses an anonymous ID stored on this device to keep
+            your chats together.{'\n\n'}
+            • Your chats are saved on this device. On a shared device, use Settings to delete
+            your data when you&apos;re done.
+          </Text>
+          <Pressable
+            onPress={() => setAgreed(!agreed)}
+            style={styles.checkRow}
+          >
+            <View
+              style={[
+                styles.checkbox,
+                { borderColor: agreed ? colors.accent : colors.border, backgroundColor: agreed ? colors.accent : 'transparent' },
+              ]}
+            >
+              {agreed && <Icon name="checkmark" size={14} color="#fff" />}
+            </View>
+            <Text style={{ color: colors.text, ...typo.caption, flex: 1 }}>
+              I understand my messages are sent to Anthropic&apos;s Claude to generate replies
+            </Text>
+          </Pressable>
+        </View>
+        <View style={styles.buttons}>
+          <Pressable
+            onPress={finish}
+            disabled={!agreed}
+            style={[styles.getStartedBtn, { backgroundColor: colors.accent, opacity: agreed ? 1 : 0.5 }]}
+          >
+            <Text style={styles.getStartedText}>Agree and continue</Text>
+          </Pressable>
+        </View>
+      </LinearGradient>
+    );
+  }
 
   return (
     <LinearGradient colors={grad.background} style={styles.container}>
@@ -100,7 +224,7 @@ export default function OnboardingScreen() {
       <View style={styles.buttons}>
         {activeIndex < PAGES.length - 1 ? (
           <>
-            <Pressable onPress={handleGetStarted}>
+            <Pressable onPress={handleNext}>
               <Text style={[styles.skipText, { color: colors.textSecondary, ...typo.body }]}>
                 Skip
               </Text>
@@ -112,7 +236,7 @@ export default function OnboardingScreen() {
           </>
         ) : (
           <Pressable
-            onPress={handleGetStarted}
+            onPress={handleNext}
             style={[styles.getStartedBtn, { backgroundColor: colors.accent }]}
           >
             <Text style={styles.getStartedText}>Get Started</Text>
@@ -133,6 +257,10 @@ const styles = StyleSheet.create({
   description: { textAlign: 'center', lineHeight: 24 },
   dots: { flexDirection: 'row', justifyContent: 'center', gap: 8, marginBottom: 24 },
   dot: { height: 8, borderRadius: 4 },
+  ageGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: 12, marginTop: 24, maxWidth: 360 },
+  ageChoice: { minWidth: 88, paddingHorizontal: 18, paddingVertical: 12, borderRadius: 12, borderWidth: 1.5, alignItems: 'center' },
+  checkRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginTop: 24, maxWidth: 360 },
+  checkbox: { width: 22, height: 22, borderRadius: 6, borderWidth: 2, justifyContent: 'center', alignItems: 'center' },
   buttons: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 24, paddingBottom: 48 },
   skipText: {},
   nextBtn: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 24, paddingVertical: 14, borderRadius: 14, gap: 6 },
